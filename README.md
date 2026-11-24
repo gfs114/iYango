@@ -6,13 +6,12 @@
 
 面向阳光学院的本地优先 Android 校园课表与教务助手
 
-当前版本 `0.1.2`（versionCode 3），分支 `iYango_prelease`，设计与变更记录见 [docs/plans](docs/plans) 与 `git log`
-
 [![Android](https://img.shields.io/badge/Android-8.0%2B%20%28minSdk%2026%20%2F%20targetSdk%2036%29-3DDC84?logo=android&logoColor=white)](https://developer.android.com/)
 [![Kotlin](https://img.shields.io/badge/Kotlin-2.4.21-7F52FF?logo=kotlin&logoColor=white)](https://kotlinlang.org/)
 [![Jetpack Compose](https://img.shields.io/badge/Jetpack%20Compose-BOM%202026.09.00-4285F4?logo=jetpackcompose&logoColor=white)](https://developer.android.com/compose)
 [![Gradle](https://img.shields.io/badge/AGP%209.4.0-Gradle%209.8.2-02303A?logo=gradle&logoColor=white)](https://gradle.org/)
 [![Room](https://img.shields.io/badge/Room-2.8.5-4CAF50)](https://developer.android.com/training/data-storage/room)
+[![License](https://img.shields.io/badge/license-MIT-3DA639)](LICENSE)
 
 </div>
 
@@ -157,9 +156,10 @@ app
 
 ## 许可与第三方
 
+- 本项目采用 [MIT 许可证](LICENSE)
 - 液态玻璃材质基于 [Kyant0/AndroidLiquidGlass](https://github.com/Kyant0/AndroidLiquidGlass)，Apache-2.0
 - 学分进度的分类与展示思路参考 [XJAU-Helper](https://github.com/FengHDSL/XJAU-Helper)，MIT，署名见 [XJAU-Helper-MIT.md](docs/third-party/XJAU-Helper-MIT.md)
-- 仓库未附带 `LICENSE`，对外分发前需补充项目自身许可
+- 第三方组件保留各自许可证与署名，不随本项目 MIT 许可重新授权
 
 ## 致谢与免责声明
 
