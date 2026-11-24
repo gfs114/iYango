@@ -1,0 +1,199 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- Android 16+ Live Update（状态栏胶囊倒计时）所需的普通权限。 -->
+    <uses-permission android:name="android.permission.POST_PROMOTED_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
+    <uses-permission android:name="android.permission.READ_CALENDAR" />
+    <uses-permission android:name="android.permission.WRITE_CALENDAR" />
+
+    <application
+        android:name=".IYangoApplication"
+        android:allowBackup="true"
+        android:enableOnBackInvokedCallback="true"
+        android:dataExtractionRules="@xml/data_extraction_rules"
+        android:fullBackupContent="@xml/backup_rules"
+        android:icon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.IYango">
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:windowSoftInputMode="adjustResize">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+            <!-- 快捷入口/外部目标统一走 iyango://open/<tab|route>，MainActivity 只接受白名单目标。 -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+
+                <category android:name="android.intent.category.DEFAULT" />
+                <data
+                    android:host="open"
+                    android:scheme="iyango" />
+            </intent-filter>
+            <meta-data
+                android:name="android.app.shortcuts"
+                android:resource="@xml/shortcuts" />
+        </activity>
+
+        <activity
+            android:name=".WidgetConfigActivity"
+            android:exported="true"
+            android:theme="@style/Theme.IYango" />
+
+        <!-- 二级/三级页通用宿主：不透明主题 + standard 启动模式，保住系统跨 Activity 预测返回。 -->
+        <activity
+            android:name=".SecondaryPageActivity"
+            android:exported="false"
+            android:theme="@style/Theme.IYango"
+            android:windowSoftInputMode="adjustResize" />
+
+        <receiver
+            android:name="com.gfs.iyango.platform.android.PreviewScheduleWidgetProvider"
+            android:exported="false"
+            android:label="@string/widget_preview_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_preview_info" />
+        </receiver>
+
+        <receiver
+            android:name="com.gfs.iyango.platform.android.TodaySmallScheduleWidgetProvider"
+            android:exported="false"
+            android:label="@string/widget_today_small_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_today_small_info" />
+        </receiver>
+
+        <receiver
+            android:name="com.gfs.iyango.platform.android.TodayLargeScheduleWidgetProvider"
+            android:exported="false"
+            android:label="@string/widget_today_large_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_today_large_info" />
+        </receiver>
+
+        <receiver
+            android:name="com.gfs.iyango.platform.android.RulerScheduleWidgetProvider"
+            android:exported="false"
+            android:label="@string/widget_ruler_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_ruler_info" />
+        </receiver>
+
+        <receiver
+            android:name="com.gfs.iyango.platform.android.WeekScheduleWidgetProvider"
+            android:exported="false"
+            android:label="@string/widget_week_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_week_info" />
+        </receiver>
+
+        <receiver
+            android:name="com.gfs.iyango.platform.android.NextClassPillWidgetProvider"
+            android:exported="false"
+            android:label="@string/widget_next_pill_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_next_pill_info" />
+        </receiver>
+
+        <receiver
+            android:name="com.gfs.iyango.platform.android.ExamCountdownWidgetProvider"
+            android:exported="false"
+            android:label="@string/widget_exam_countdown_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_exam_countdown_info" />
+        </receiver>
+
+        <!-- RemoteViewsService：桌面卡片内部滚动列表（保持不导出 + BIND_REMOTEVIEWS）。 -->
+        <service
+            android:name="com.gfs.iyango.platform.android.ScheduleAppWidgetService"
+            android:exported="false"
+            android:permission="android.permission.BIND_REMOTEVIEWS" />
+
+        <service
+            android:name="com.gfs.iyango.platform.android.TodayColorfulService"
+            android:exported="false"
+            android:permission="android.permission.BIND_REMOTEVIEWS" />
+
+        <service
+            android:name="com.gfs.iyango.platform.android.TodayModernService"
+            android:exported="false"
+            android:permission="android.permission.BIND_REMOTEVIEWS" />
+
+        <receiver android:name="com.gfs.iyango.platform.android.WidgetRefreshReceiver" android:exported="false" />
+
+        <receiver
+            android:name="com.gfs.iyango.platform.android.ReminderReceiver"
+            android:exported="false" />
+
+        <receiver
+            android:name="com.gfs.iyango.platform.android.GradeCheckReceiver"
+            android:exported="false" />
+
+        <receiver
+            android:name="com.gfs.iyango.platform.android.GradeNotificationDismissReceiver"
+            android:exported="false" />
+
+        <receiver
+            android:name="com.gfs.iyango.platform.android.SystemEventReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.TIME_SET" />
+                <action android:name="android.intent.action.DATE_CHANGED" />
+                <action android:name="android.intent.action.TIMEZONE_CHANGED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+                <action android:name="android.app.action.SCHEDULE_EXACT_ALARM_PERMISSION_STATE_CHANGED" />
+            </intent-filter>
+        </receiver>
+
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
+    </application>
+
+</manifest>

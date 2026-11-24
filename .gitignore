@@ -1,0 +1,26 @@
+# Gradle
+.gradle
+build/
+local.properties
+
+# IDE
+*.iml
+.idea/
+
+# Kotlin / 工具
+.kotlin/
+.mimosa/
+
+# 构建产物
+.externalNativeBuild
+.cxx
+captures
+.DS_Store
+
+# 注意：data/schemas/（Room schema 历史）必须纳入版本控制，勿加忽略。
+
+# 本地诊断证据（截图、APK、日志），不进入版本库
+diagnostics/
+
+# 本地探测文件
+.write-probe.txt

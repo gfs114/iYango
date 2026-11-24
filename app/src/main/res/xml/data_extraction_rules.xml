@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8"?><!--
+  Android 12+ 云备份/设备迁移规则。
+  凭据、设备本地系统映射与壁纸不参与自动备份；设置通过应用内导出迁移。
+-->
+<data-extraction-rules>
+    <cloud-backup>
+        <exclude domain="sharedpref" path="iyango_credentials.xml" />
+        <exclude domain="sharedpref" path="iyango_ai_config.xml" />
+        <exclude domain="sharedpref" path="iyango_update_prefs.xml" />
+        <exclude domain="sharedpref" path="widget_days.xml" />
+        <exclude domain="sharedpref" path="reminder_plan.xml" />
+        <exclude domain="file" path="credentials" />
+        <exclude domain="file" path="datastore/app_settings.preferences_pb" />
+        <exclude domain="database" path="iyango.db" />
+        <exclude domain="database" path="iyango.db-wal" />
+        <exclude domain="database" path="iyango.db-shm" />
+        <exclude domain="database" path="iyango.db-journal" />
+        <exclude domain="file" path="wallpapers" />
+    </cloud-backup>
+    <device-transfer>
+        <exclude domain="sharedpref" path="iyango_credentials.xml" />
+        <exclude domain="sharedpref" path="iyango_ai_config.xml" />
+        <exclude domain="sharedpref" path="iyango_update_prefs.xml" />
+        <exclude domain="sharedpref" path="widget_days.xml" />
+        <exclude domain="sharedpref" path="reminder_plan.xml" />
+        <exclude domain="file" path="credentials" />
+        <exclude domain="file" path="datastore/app_settings.preferences_pb" />
+        <exclude domain="database" path="iyango.db" />
+        <exclude domain="database" path="iyango.db-wal" />
+        <exclude domain="database" path="iyango.db-shm" />
+        <exclude domain="database" path="iyango.db-journal" />
+        <exclude domain="file" path="wallpapers" />
+    </device-transfer>
+</data-extraction-rules>

@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 组件底色层（iv_bg_color）与背景图裁剪轮廓（iv_bg_pic）共用的圆角矩形。 -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android">
+    <solid android:color="#FFFFFF" />
+    <corners android:radius="16dp" />
+</shape>

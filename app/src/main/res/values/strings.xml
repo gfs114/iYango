@@ -1,0 +1,30 @@
+<resources>
+    <string name="app_name">iYango</string>
+
+    <string name="widget_preview_label">课程预览</string>
+    <string name="widget_preview_description">下一节课的课程、时间与教室</string>
+    <string name="widget_today_small_label">今日课程</string>
+    <string name="widget_today_small_description">今天最多四节课</string>
+    <string name="widget_today_large_label">今日课程（大）</string>
+    <string name="widget_today_large_description">今天最多六节课</string>
+    <string name="widget_ruler_label">今日标尺</string>
+    <string name="widget_ruler_description">按时间顺序查看今天的课程与当前时刻</string>
+    <string name="widget_week_label">周课表</string>
+    <string name="widget_week_description">整周课表网格，可上下滚动与前后翻周</string>
+    <string name="widget_next_pill_label">下一节课胶囊</string>
+    <string name="widget_next_pill_description">液态玻璃胶囊样式，一眼查看下一节课、教室与倒计时</string>
+    <string name="widget_exam_countdown_label">考试倒计时</string>
+    <string name="widget_exam_countdown_description">液态玻璃卡片，实时展示近期考试倒计时与考场座位</string>
+
+    <string name="widget_preview_header">下一节</string>
+    <string name="widget_empty_title">暂无课程</string>
+    <string name="widget_empty_today">今天没有课程</string>
+    <string name="widget_config_title">组件设置</string>
+
+    <string name="shortcut_today_short">首页</string>
+    <string name="shortcut_today_long">首页</string>
+    <string name="shortcut_schedule_short">课程表</string>
+    <string name="shortcut_schedule_long">课程表</string>
+    <string name="shortcut_mine_short">我的</string>
+    <string name="shortcut_mine_long">我的</string>
+</resources>

@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="utf-8"?>
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut
+        android:enabled="true"
+        android:icon="@drawable/ic_shortcut_home"
+        android:shortcutId="shortcut_1_home"
+        android:shortcutLongLabel="@string/shortcut_today_long"
+        android:shortcutShortLabel="@string/shortcut_today_short">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:data="iyango://open/today">
+            <categories>
+                <category android:name="android.intent.category.DEFAULT" />
+            </categories>
+        </intent>
+    </shortcut>
+
+    <shortcut
+        android:enabled="true"
+        android:icon="@drawable/ic_shortcut_schedule"
+        android:shortcutId="shortcut_2_schedule"
+        android:shortcutLongLabel="@string/shortcut_schedule_long"
+        android:shortcutShortLabel="@string/shortcut_schedule_short">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:data="iyango://open/schedule">
+            <categories>
+                <category android:name="android.intent.category.DEFAULT" />
+            </categories>
+        </intent>
+    </shortcut>
+
+    <shortcut
+        android:enabled="true"
+        android:icon="@drawable/ic_shortcut_mine"
+        android:shortcutId="shortcut_3_mine"
+        android:shortcutLongLabel="@string/shortcut_mine_long"
+        android:shortcutShortLabel="@string/shortcut_mine_short">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:data="iyango://open/mine">
+            <categories>
+                <category android:name="android.intent.category.DEFAULT" />
+            </categories>
+        </intent>
+    </shortcut>
+</shortcuts>

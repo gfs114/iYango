@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?><!--
+  Android 系统自动备份规则（API 30 及以下）。
+  设置的手动迁移见应用内“设置备份与重置”（F17）；这里只做排除，避免把
+  凭据密文与设备本地的系统记录跨设备恢复。
+
+  排除项：
+  - 教务凭据/Cookie 密文：只有本机 Keystore 密钥可解，跨设备恢复无意义且不应外流；
+  - app_settings DataStore：保存用户选定的系统日历 id 与同步状态；
+  - iyango.db：内含系统日历事件/闹钟映射与桌面组件宿主 id，跨设备不可沿用；
+  - 壁纸：路径与图片由手动导出/导入负责，避免系统备份体积膨胀。
+-->
+<full-backup-content>
+    <exclude domain="sharedpref" path="iyango_credentials.xml" />
+    <exclude domain="sharedpref" path="iyango_ai_config.xml" />
+    <exclude domain="sharedpref" path="iyango_update_prefs.xml" />
+    <exclude domain="sharedpref" path="widget_days.xml" />
+    <exclude domain="sharedpref" path="reminder_plan.xml" />
+    <exclude domain="file" path="credentials" />
+    <exclude domain="file" path="datastore/app_settings.preferences_pb" />
+    <exclude domain="database" path="iyango.db" />
+    <exclude domain="database" path="iyango.db-wal" />
+    <exclude domain="database" path="iyango.db-shm" />
+    <exclude domain="database" path="iyango.db-journal" />
+    <exclude domain="file" path="wallpapers" />
+</full-backup-content>

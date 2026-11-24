@@ -1,0 +1,8 @@
+<resources xmlns:tools="http://schemas.android.com/tools">
+    <!-- Compose 应用宿主主题：仅提供窗口底色，视觉由 Compose 主题接管。 -->
+    <style name="Base.Theme.IYango" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:statusBarColor">@android:color/transparent</item>
+    </style>
+
+    <style name="Theme.IYango" parent="Base.Theme.IYango" />
+</resources>

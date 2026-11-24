@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Shadow only: each widget keeps its existing text size, color and layout. -->
+    <style name="WidgetTextHalo">
+        <item name="android:shadowColor">@color/widget_text_shadow</item>
+        <item name="android:shadowDx">0</item>
+        <item name="android:shadowDy">0</item>
+        <item name="android:shadowRadius">1.5</item>
+    </style>
+</resources>
