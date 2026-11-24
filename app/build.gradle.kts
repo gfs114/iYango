@@ -81,6 +81,29 @@ composeCompiler {
     stabilityConfigurationFiles.add(rootProject.layout.projectDirectory.file("compose_stability.conf"))
 }
 
+// AGP 9 不再提供 outputFileName：assembleRelease 结束后把产物改名为 iYango-release*.apk。
+val releaseApkDir = layout.buildDirectory.dir("outputs/apk/release")
+
+val renameReleaseApk = tasks.register("renameReleaseApk") {
+    group = "build"
+    description = "把 app-release*.apk 重命名为 iYango-release*.apk"
+    doLast {
+        val dir = releaseApkDir.get().asFile
+        dir.listFiles { file -> file.isFile && file.name.startsWith("app-release") }
+            ?.forEach { file ->
+                val target = File(dir, file.name.replaceFirst("app-release", "iYango-release"))
+                if (!file.renameTo(target)) {
+                    file.copyTo(target, overwrite = true)
+                    file.delete()
+                }
+            }
+    }
+}
+
+tasks.matching { it.name == "assembleRelease" }.configureEach {
+    finalizedBy(renameReleaseApk)
+}
+
 dependencies {
     implementation(project(":core:model"))
     implementation(project(":core:domain"))

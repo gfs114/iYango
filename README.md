@@ -150,6 +150,8 @@ app
 
 [.github/workflows/release.yml](.github/workflows/release.yml) 在推送 `v*` 标签或手动触发时编译 release APK：标签构建自动附加到 GitHub Release，手动触发可在 Actions 页面下载产物。仓库 Secrets 需配置 `IYANGO_KEYSTORE_BASE64`、`IYANGO_KEYSTORE_PASSWORD`、`IYANGO_KEY_ALIAS`、`IYANGO_KEY_PASSWORD`。
 
+本地 `:app:assembleRelease` 产物为 `app/build/outputs/apk/release/iYango-release.apk`。
+
 ---
 
 ## 已知限制
