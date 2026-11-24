@@ -5,6 +5,16 @@ plugins {
     alias(libs.plugins.ksp)
 }
 
+// 发布签名：由环境变量注入（CI Secrets 或本地临时变量），缺省时 release 产出未签名 APK。
+val releaseKeystorePath = providers.environmentVariable("IYANGO_KEYSTORE_PATH")
+val releaseKeystorePassword = providers.environmentVariable("IYANGO_KEYSTORE_PASSWORD")
+val releaseKeyAlias = providers.environmentVariable("IYANGO_KEY_ALIAS")
+val releaseKeyPassword = providers.environmentVariable("IYANGO_KEY_PASSWORD")
+val hasReleaseSigning = releaseKeystorePath.isPresent &&
+    releaseKeystorePassword.isPresent &&
+    releaseKeyAlias.isPresent &&
+    releaseKeyPassword.isPresent
+
 android {
     namespace = "com.gfs.iyango"
     compileSdk = 37
@@ -17,6 +27,16 @@ android {
         versionName = "0.1.2"
     }
 
+    signingConfigs {
+        if (hasReleaseSigning) {
+            create("release") {
+                storeFile = file(releaseKeystorePath.get())
+                storePassword = releaseKeystorePassword.get()
+                keyAlias = releaseKeyAlias.get()
+                keyPassword = releaseKeyPassword.get()
+            }
+        }
+    }
     buildTypes {
         debug {
             // 测试包与稳定包可同时安装、互不覆盖（P0-08）。
@@ -27,6 +47,9 @@ android {
             optimization {
                 enable = true
                 packageScope = setOf("androidx.**", "kotlinx.**", "okhttp3.**", "okio.**")
+            }
+            if (hasReleaseSigning) {
+                signingConfig = signingConfigs.getByName("release")
             }
         }
         create("benchmark") {

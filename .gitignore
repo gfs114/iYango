@@ -17,10 +17,11 @@ local.properties
 captures
 .DS_Store
 
+# 发布签名：只放本地或 CI Secrets，禁止入库
+release.keystore
+*.jks
+*.keystore
+keystore.properties
+keystore.b64
+
 # 注意：data/schemas/（Room schema 历史）必须纳入版本控制，勿加忽略。
-
-# 本地诊断证据（截图、APK、日志），不进入版本库
-diagnostics/
-
-# 本地探测文件
-.write-probe.txt

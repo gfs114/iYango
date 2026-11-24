@@ -6,6 +6,8 @@
 
 面向阳光学院的本地优先 Android 校园课表与教务助手
 
+当前版本 `0.1.2`（versionCode 3），分支 `iYango_prelease`，设计与变更记录见 [docs/plans](docs/plans) 与 `git log`
+
 [![Android](https://img.shields.io/badge/Android-8.0%2B%20%28minSdk%2026%20%2F%20targetSdk%2036%29-3DDC84?logo=android&logoColor=white)](https://developer.android.com/)
 [![Kotlin](https://img.shields.io/badge/Kotlin-2.4.21-7F52FF?logo=kotlin&logoColor=white)](https://kotlinlang.org/)
 [![Jetpack Compose](https://img.shields.io/badge/Jetpack%20Compose-BOM%202026.09.00-4285F4?logo=jetpackcompose&logoColor=white)](https://developer.android.com/compose)
@@ -115,9 +117,9 @@ app
 | :--- | :--- | :--- |
 | `debug` | `com.gfs.iyango.debug` | 开发调试包，可与稳定包共存 |
 | `benchmark` | `com.gfs.iyango.benchmark` | 继承自 `release` 并开启 R8 优化，使用 debug 签名便于实机性能评测 |
-| `release` | `com.gfs.iyango` | 正式发布包（开启 R8 代码优化；未配置签名，产出未签名 APK） |
+| `release` | `com.gfs.iyango` | 正式发布包（开启 R8 代码优化；签名由环境变量注入，未配置时产出未签名 APK） |
 
-`optimization { enable = true }` 控制 R8 代码优化；仓库未提供 release 签名配置，正式分发前需自行补充。
+`optimization { enable = true }` 控制 R8 代码优化；release 签名通过环境变量注入，见下节。
 
 ### 常用命令（Windows PowerShell）
 
@@ -135,6 +137,19 @@ app
 .\gradlew.bat :app:assembleRelease --console=plain
 ```
 
+### 发布签名与自动构建
+
+本地或 CI 通过四个环境变量提供签名，密钥不写入仓库：
+
+| 环境变量 | 含义 |
+| :--- | :--- |
+| `IYANGO_KEYSTORE_PATH` | keystore 文件绝对路径 |
+| `IYANGO_KEYSTORE_PASSWORD` | keystore 密码 |
+| `IYANGO_KEY_ALIAS` | 密钥别名 |
+| `IYANGO_KEY_PASSWORD` | 密钥密码 |
+
+[.github/workflows/release.yml](.github/workflows/release.yml) 在推送 `v*` 标签或手动触发时编译 release APK：标签构建自动附加到 GitHub Release，手动触发可在 Actions 页面下载产物。仓库 Secrets 需配置 `IYANGO_KEYSTORE_BASE64`、`IYANGO_KEYSTORE_PASSWORD`、`IYANGO_KEY_ALIAS`、`IYANGO_KEY_PASSWORD`。
+
 ---
 
 ## 已知限制
@@ -142,7 +157,7 @@ app
 - 教务同步依赖阳光学院强智教务页面结构，学校改版后需同步更新解析器
 - Android 16（API 36）的 Live Update 与提升通知在低版本降级为普通常驻通知
 - 二维码分享为离线生成，应用内不提供相机扫码，导入依赖粘贴口令或外部扫码工具
-- `debug` 与 `benchmark` 使用 debug 签名，`release` 未配置签名
+- `debug` 与 `benchmark` 使用 debug 签名，`release` 需配置签名环境变量后才能产出可安装的正式包
 
 ---
 
