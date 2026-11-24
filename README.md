@@ -6,8 +6,6 @@
 
 面向阳光学院的本地优先 Android 校园课表与教务助手
 
-当前版本 `0.1.2`（versionCode 3），分支 `iYango_prelease`，设计与变更记录见 [docs/plans](docs/plans) 与 `git log`
-
 [![Android](https://img.shields.io/badge/Android-8.0%2B%20%28minSdk%2026%20%2F%20targetSdk%2036%29-3DDC84?logo=android&logoColor=white)](https://developer.android.com/)
 [![Kotlin](https://img.shields.io/badge/Kotlin-2.4.21-7F52FF?logo=kotlin&logoColor=white)](https://kotlinlang.org/)
 [![Jetpack Compose](https://img.shields.io/badge/Jetpack%20Compose-BOM%202026.09.00-4285F4?logo=jetpackcompose&logoColor=white)](https://developer.android.com/compose)
