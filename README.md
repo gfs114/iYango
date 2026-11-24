@@ -106,7 +106,6 @@ app
 - **JDK**：Java 17
 - **Android SDK**：`compileSdk = 37`、`minSdk = 26`、`targetSdk = 36`
 - **SDK 路径**：在 `local.properties` 写入 `sdk.dir`，或设置 `ANDROID_HOME`
-- **Robolectric**：默认按 SDK 35 运行，少量兼容性用例单独指定（预测性返回测试用 SDK 28）
 - **Gradle**：使用项目自带 Wrapper（`gradlew.bat` / `./gradlew`）
 
 ### 构建变体说明
@@ -116,8 +115,6 @@ app
 | `debug` | `com.gfs.iyango.debug` | 开发调试包，可与稳定包共存 |
 | `benchmark` | `com.gfs.iyango.benchmark` | 继承自 `release` 并开启 R8 优化，使用 debug 签名便于实机性能评测 |
 | `release` | `com.gfs.iyango` | 正式发布包（开启 R8 代码优化；签名由环境变量注入，未配置时产出未签名 APK） |
-
-`optimization { enable = true }` 控制 R8 代码优化；release 签名通过环境变量注入，见下节。
 
 ### 常用命令（Windows PowerShell）
 
@@ -157,7 +154,6 @@ app
 - 教务同步依赖阳光学院强智教务页面结构，学校改版后需同步更新解析器
 - Android 16（API 36）的 Live Update 与提升通知在低版本降级为普通常驻通知
 - 二维码分享为离线生成，应用内不提供相机扫码，导入依赖粘贴口令或外部扫码工具
-- `debug` 与 `benchmark` 使用 debug 签名，`release` 需配置签名环境变量后才能产出可安装的正式包
 
 ---
 
