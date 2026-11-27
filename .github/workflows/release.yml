@@ -3,8 +3,6 @@ name: Release APK
 on:
   workflow_dispatch:
   push:
-    branches:
-      - main
     tags:
       - "v*"
 
@@ -21,6 +19,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
@@ -65,9 +65,148 @@ jobs:
           path: app/build/outputs/apk/release/*.apk
           if-no-files-found: error
 
+      - name: Generate release notes & checksums
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_REF_NAME: ${{ github.ref_name }}
+        run: |
+          python3 - <<'PY'
+          import glob
+          import hashlib
+          import os
+          import re
+          import subprocess
+
+          repo = os.environ["GITHUB_REPOSITORY"]
+          tag = os.environ["GITHUB_REF_NAME"]
+          apks = sorted(glob.glob("app/build/outputs/apk/release/*.apk"))
+          if not apks:
+              raise SystemExit("No release APK found")
+
+          checksum_lines = []
+          table_rows = []
+          for path in apks:
+              name = os.path.basename(path)
+              size_mb = os.path.getsize(path) / (1024 * 1024)
+              h = hashlib.sha256()
+              with open(path, "rb") as f:
+                  for chunk in iter(lambda: f.read(1024 * 1024), b""):
+                      h.update(chunk)
+              checksum_lines.append(f"{h.hexdigest()}  {name}")
+              url = f"https://github.com/{repo}/releases/download/{tag}/{name}"
+              table_rows.append(
+                  f"| **Android 8.0+ (APK / 手机安装)** | [{name}]({url}) | {size_mb:.2f} MB |"
+              )
+
+          sums_path = "app/build/outputs/apk/release/SHA256SUMS.txt"
+          with open(sums_path, "w", encoding="utf-8", newline="\n") as f:
+              f.write("\n".join(checksum_lines) + "\n")
+
+          def git(*args):
+              return subprocess.run(
+                  ["git", *args],
+                  capture_output=True,
+                  text=True,
+                  encoding="utf-8",
+              )
+
+          prev_tag = ""
+          res_prev = git("describe", "--tags", "--abbrev=0", f"{tag}^")
+          if res_prev.returncode == 0:
+              prev_tag = res_prev.stdout.strip()
+
+          tag_msg = ""
+          res_tag = git("tag", "-l", "--format=%(contents)", tag)
+          if res_tag.returncode == 0:
+              raw_tag = res_tag.stdout.strip()
+              non_empty = [ln.strip() for ln in raw_tag.splitlines() if ln.strip()]
+              is_stub = (
+                  len(non_empty) == 1
+                  and re.match(r"^(release\s+v?\S*|v?\d+(\.\d+)*)$", non_empty[0], re.I) is not None
+              )
+              if non_empty and not is_stub:
+                  tag_msg = raw_tag
+
+          changelog_lines = []
+          if tag_msg:
+              changelog_lines.append(tag_msg)
+          else:
+              args = ["log", "--no-merges", "--format=%x1e%s%x1f%b"]
+              if prev_tag:
+                  args.append(f"{prev_tag}..{tag}")
+              else:
+                  args.extend(["-n", "20", tag])
+              res_log = git(*args)
+              groups = {"新增": [], "修复": [], "优化": [], "其他": []}
+              skipped = []
+              for rec in res_log.stdout.split("\x1e"):
+                  rec = rec.strip("\n\r")
+                  if not rec:
+                      continue
+                  subject, _, body = rec.partition("\x1f")
+                  subject = subject.strip()
+                  if not subject:
+                      continue
+                  m = re.match(r"^([a-zA-Z]+)(?:\([^)]*\))?:\s*(.+)$", subject)
+                  prefix = m.group(1).lower() if m else ""
+                  clean_subject = m.group(2).strip() if m else subject
+                  bullets = [
+                      "- " + re.sub(r"^[-*]\s+", "", ln.strip())
+                      for ln in body.splitlines()
+                      if re.match(r"^\s*[-*]\s+\S+", ln)
+                  ]
+                  items = bullets if bullets else [f"- {clean_subject}"]
+                  if prefix == "feat":
+                      groups["新增"].extend(items)
+                  elif prefix == "fix":
+                      groups["修复"].extend(items)
+                  elif prefix in ("perf", "refactor", "style"):
+                      groups["优化"].extend(items)
+                  elif prefix in ("ci", "chore", "docs", "test", "build"):
+                      skipped.extend(items)
+                  else:
+                      groups["其他"].extend(items)
+
+              has_primary = any(groups[k] for k in ("新增", "修复", "优化", "其他"))
+              if not has_primary and skipped:
+                  groups["其他"].extend(skipped)
+
+              for title in ("新增", "修复", "优化", "其他"):
+                  if groups[title]:
+                      changelog_lines.append(f"### {title}")
+                      changelog_lines.extend(groups[title])
+                      changelog_lines.append("")
+
+          sums_url = f"https://github.com/{repo}/releases/download/{tag}/SHA256SUMS.txt"
+          out = [
+              "## Download / 下载",
+              "",
+              "| System / 系统 | Download / 下载 | Size / 大小 |",
+              "| :--- | :--- | :--- |",
+              *table_rows,
+              "",
+              f"下载后可使用 [SHA256SUMS.txt]({sums_url}) 核对安装包 SHA-256 校验值。",
+              "",
+              "## 更新内容",
+              "",
+              *changelog_lines,
+          ]
+          if prev_tag:
+              if out and out[-1] != "":
+                  out.append("")
+              out.append(f"**Full Changelog**: https://github.com/{repo}/compare/{prev_tag}...{tag}")
+
+          with open("release-notes.md", "w", encoding="utf-8", newline="\n") as f:
+              f.write("\n".join(out).rstrip() + "\n")
+          PY
+
       - name: Attach APK to GitHub Release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
-          files: app/build/outputs/apk/release/*.apk
-          generate_release_notes: true
+          body_path: release-notes.md
+          files: |
+            app/build/outputs/apk/release/*.apk
+            app/build/outputs/apk/release/SHA256SUMS.txt
+          generate_release_notes: false

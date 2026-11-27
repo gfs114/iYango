@@ -18,3 +18,8 @@
 - **新功能自动升 0.1**：每轮完成并验证通过新功能交付（单次包含多个新功能时仍按整轮统一加 `0.1`），在 `app/build.gradle.kts` 中将 `versionName` 按两段式 `X.Y` 自动加 `0.1`（如 `1.0` → `1.1` → `1.2`，满 `X.9` 按十进制进位为 `(X+1).0`），同时将 `versionCode` 加 `1`，并保持 `HttpAppUpdateRepository.kt` 中的兜底版本号一致。
 - **仅新功能触发递增**：纯 Bug 修复、重构、测试或文档调整不自动递增版本号（除非用户显式要求）。
 - **随镜像同步**：版本号变更后按第 3 节规则一并同步至 `G:\code\Android\test\iYango`。
+
+## 5. GitHub 发布触发准则 (Tag-Only Release Trigger)
+- **仅 `v*` 标签触发 GitHub 更新**：推送常规提交到 `main` 等分支时，不触发 GitHub Actions 编译与发布；只有明确发布正式版本并推送 `v*` 格式标签（如 `git tag -a v1.1 -m "Release v1.1" && git push origin v1.1`）时，才触发 GitHub Actions 编译 Release APK 并发布 GitHub Release。
+- **工作流触发约束**：`G:\code\Android\test\iYango\.github\workflows\release.yml` 仅监听 `push.tags: ["v*"]`（及手动 `workflow_dispatch`），禁止添加 `push.branches`。
+- **同步推送默认不打标签**：向发布镜像库执行 `git push` 时默认仅推送分支提交，除非用户显式要求发布版本或推送 `v*` 标签。
