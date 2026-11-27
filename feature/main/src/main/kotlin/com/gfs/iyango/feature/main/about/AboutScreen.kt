@@ -85,6 +85,7 @@ fun AboutScreen(
     onBack: () -> Unit,
     onOpenDockGlassDev: () -> Unit = {},
     onOpenRuntimeLogs: () -> Unit = {},
+    onOpenAppUpdate: () -> Unit = {},
     viewModel: AboutViewModel = hiltViewModel(),
 ) {
     val context = LocalContext.current
@@ -193,9 +194,21 @@ fun AboutScreen(
                     ) {
                         Text("查看运行日志")
                     }
+                    LiquidOutlinedButton(
+                        onClick = onOpenAppUpdate,
+                        modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+                    ) {
+                        Text("版本更新")
+                    }
                     val checkingUpdate = updateState is AppUpdateCheckState.Checking
                     LiquidOutlinedButton(
-                        onClick = viewModel::checkForUpdates,
+                        onClick = {
+                            if (updateState is AppUpdateCheckState.Available) {
+                                onOpenAppUpdate()
+                            } else {
+                                viewModel.checkForUpdates()
+                            }
+                        },
                         enabled = !checkingUpdate,
                         modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
                     ) {

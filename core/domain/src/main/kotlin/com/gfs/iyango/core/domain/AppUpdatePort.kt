@@ -13,11 +13,70 @@ data class AppUpdateRelease(
     val pageUrl: String = "",
     val publishedAt: String = "",
     val forceUpdate: Boolean = false,
+    val apkSizeBytes: Long = 0,
+    val apkFileName: String = "",
 ) {
     val actionUrl: String get() = downloadUrl.ifBlank { pageUrl }
 
     val versionKey: String
         get() = if (versionCode > 0) "code:$versionCode" else "name:${versionName.trim()}"
+}
+
+/**
+ * APK 下载源镜像选择。
+ */
+enum class UpdateDownloadMirror(
+    val id: String,
+    val label: String,
+) {
+    DIRECT("direct", "直连 GitHub"),
+    GHPROXY("ghproxy", "镜像 1"),
+    GHFAST("ghfast", "镜像 2");
+
+    fun resolveUrl(rawUrl: String): String {
+        val trimmed = rawUrl.trim()
+        val isGitHubAsset = trimmed.startsWith("https://github.com/") ||
+            trimmed.startsWith("https://objects.githubusercontent.com/")
+        if (!isGitHubAsset) return trimmed
+        return when (this) {
+            DIRECT -> trimmed
+            GHPROXY -> "https://gh-proxy.com/$trimmed"
+            GHFAST -> "https://ghfast.top/$trimmed"
+        }
+    }
+
+    companion object {
+        fun fromId(id: String?): UpdateDownloadMirror =
+            entries.firstOrNull { it.id == id } ?: DIRECT
+    }
+}
+
+/**
+ * 应用内 APK 下载状态。
+ */
+sealed interface AppUpdateDownloadState {
+    data object Idle : AppUpdateDownloadState
+
+    data class Downloading(
+        val versionKey: String,
+        val downloadedBytes: Long,
+        val totalBytes: Long,
+        val bytesPerSecond: Long,
+    ) : AppUpdateDownloadState {
+        val progress: Float?
+            get() = if (totalBytes > 0L) (downloadedBytes.toFloat() / totalBytes.toFloat()).coerceIn(0f, 1f) else null
+    }
+
+    data class ReadyToInstall(
+        val versionKey: String,
+        val apkFilePath: String,
+        val fileSizeBytes: Long,
+    ) : AppUpdateDownloadState
+
+    data class Failed(
+        val versionKey: String,
+        val message: String,
+    ) : AppUpdateDownloadState
 }
 
 /**
@@ -85,10 +144,23 @@ object AppVersionComparator {
 interface AppUpdatePort {
     val state: StateFlow<AppUpdateCheckState>
     val promptRelease: StateFlow<AppUpdateRelease?>
+    val currentVersionName: String
+    val currentVersionCode: Long
+    val downloadState: StateFlow<AppUpdateDownloadState>
+    val downloadMirror: StateFlow<UpdateDownloadMirror>
+    val autoCheckEnabled: StateFlow<Boolean>
+    val releaseHistory: StateFlow<List<AppUpdateRelease>>
+    val historyLoading: StateFlow<Boolean>
     suspend fun configuredUrl(): String
     suspend fun checkOnLaunch(force: Boolean = false)
     suspend fun checkManually(): AppUpdateCheckState
+    suspend fun loadReleaseHistory(force: Boolean = false)
     fun dismissPrompt()
     suspend fun ignoreVersion(versionKey: String)
     suspend fun setCustomEndpointOverride(url: String)
+    suspend fun setDownloadMirror(mirror: UpdateDownloadMirror)
+    suspend fun setAutoCheckEnabled(enabled: Boolean)
+    fun startDownload(release: AppUpdateRelease)
+    fun cancelDownload()
+    fun resetDownloadState()
 }

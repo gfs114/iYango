@@ -31,6 +31,7 @@ fun AppUpdateDialog(
     release: AppUpdateRelease,
     onDismiss: () -> Unit,
     onIgnore: (String) -> Unit,
+    onOpenUpdatePage: (() -> Unit)? = null,
 ) {
     val context = LocalContext.current
     val versionLabel = when {
@@ -74,7 +75,7 @@ fun AppUpdateDialog(
                         style = MaterialTheme.typography.bodyMedium,
                     )
                 }
-                if (actionUrl.isBlank()) {
+                if (actionUrl.isBlank() && onOpenUpdatePage == null) {
                     Text(
                         text = "当前版本清单未附带下载链接。",
                         style = MaterialTheme.typography.labelSmall,
@@ -93,17 +94,21 @@ fun AppUpdateDialog(
                 }
                 LiquidButton(
                     onClick = {
-                        if (actionUrl.isNotBlank()) {
-                            runCatching {
-                                val intent = Intent(Intent.ACTION_VIEW, Uri.parse(actionUrl)).apply {
-                                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        if (onOpenUpdatePage != null) {
+                            onOpenUpdatePage()
+                        } else {
+                            if (actionUrl.isNotBlank()) {
+                                runCatching {
+                                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse(actionUrl)).apply {
+                                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                    }
+                                    context.startActivity(intent)
                                 }
-                                context.startActivity(intent)
                             }
+                            if (!release.forceUpdate) onDismiss()
                         }
-                        if (!release.forceUpdate) onDismiss()
                     },
-                    enabled = actionUrl.isNotBlank(),
+                    enabled = onOpenUpdatePage != null || actionUrl.isNotBlank(),
                 ) {
                     Text("立即更新")
                 }

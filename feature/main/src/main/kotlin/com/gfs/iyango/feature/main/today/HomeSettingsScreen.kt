@@ -98,6 +98,12 @@ internal fun HomeSettingsContent(
     val lifecycleState by lifecycle.currentStateFlow.collectAsState()
     val interactive = state.loaded && !state.saving && lifecycleState.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED)
     val drag = rememberHomeOrderDrag(list, interactive)
+    val visibleModules = remember(state.draft.moduleOrder) {
+        state.draft.moduleOrder.filter { it != HomeModule.EXAMS.id }
+    }
+    val visibleQuickActions = remember(state.draft.quickActions) {
+        state.draft.quickActions.filter { it != HomeShortcut.EXAMS.id }
+    }
     GlassScaffold(modifier = modifier.fillMaxSize(), topBar = {
         GlassTopBar(title = "首页设置", navigationIcon = {
             GlassTopBarIconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "取消") }
@@ -111,23 +117,23 @@ internal fun HomeSettingsContent(
                 if (!state.loaded) item { LoadingState() }
                 else {
                     item { SectionHeader(title = "模块与顺序") }
-                    itemsIndexed(state.draft.moduleOrder, key = { _, id -> "module:$id" }) { index, id ->
-                        HomeOrderRow(drag, "module:$id", homeModuleTitle(id), index, state.draft.moduleOrder.size,
+                    itemsIndexed(visibleModules, key = { _, id -> "module:$id" }) { index, id ->
+                        HomeOrderRow(drag, "module:$id", homeModuleTitle(id), index, visibleModules.size,
                             selected = id !in state.draft.hiddenModules, enabled = interactive,
                             onToggle = { onToggleModule(id) }, onMove = { onMoveModule(id, it) })
                     }
-                    item { SectionHeader(title = "快捷入口（${state.draft.quickActions.size}/8）") }
-                    itemsIndexed(state.draft.quickActions, key = { _, id -> "shortcut:$id" }) { index, id ->
-                        HomeOrderRow(drag, "shortcut:$id", homeShortcutTitle(id), index, state.draft.quickActions.size, true, interactive,
+                    item { SectionHeader(title = "快捷入口（${visibleQuickActions.size}/8）") }
+                    itemsIndexed(visibleQuickActions, key = { _, id -> "shortcut:$id" }) { index, id ->
+                        HomeOrderRow(drag, "shortcut:$id", homeShortcutTitle(id), index, visibleQuickActions.size, true, interactive,
                             onToggle = { onToggleShortcut(id) }, onMove = { onMoveShortcut(id, it) })
                     }
                     item {
                         Column {
                             Text("可添加的入口", style = MaterialTheme.typography.titleSmall)
-                            HomeShortcut.entries.filter { it.id !in state.draft.quickActions }.forEach { shortcut ->
+                            HomeShortcut.entries.filter { it != HomeShortcut.EXAMS && it.id !in state.draft.quickActions }.forEach { shortcut ->
                                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                                     Text(homeShortcutTitle(shortcut.id), Modifier.weight(1f))
-                                    TextButton(onClick = { onToggleShortcut(shortcut.id) }, enabled = !state.saving && state.draft.quickActions.size < 8) { Text("添加") }
+                                    TextButton(onClick = { onToggleShortcut(shortcut.id) }, enabled = !state.saving && visibleQuickActions.size < 8) { Text("添加") }
                                 }
                             }
                         }

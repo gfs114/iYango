@@ -46,14 +46,24 @@ class HomeSettingsViewModel @Inject constructor(private val settings: AppSetting
         else it.copy(hiddenModules = if (id in it.hiddenModules) it.hiddenModules - id else it.hiddenModules + id)
     }
     fun toggleShortcut(id: String) = edit {
+        val cleanQuick = it.quickActions.filter { s -> s != HomeShortcut.EXAMS.id }
         when {
-            id in it.quickActions -> it.copy(quickActions = it.quickActions - id)
-            it.quickActions.size < 8 && HomeShortcut.entries.any { shortcut -> shortcut.id == id } -> it.copy(quickActions = it.quickActions + id)
+            id == HomeShortcut.EXAMS.id -> it.copy(quickActions = cleanQuick)
+            id in cleanQuick -> it.copy(quickActions = cleanQuick - id)
+            cleanQuick.size < 8 && HomeShortcut.entries.any { shortcut -> shortcut.id == id } ->
+                it.copy(quickActions = cleanQuick + id)
             else -> it
         }
     }
-    fun moveModule(id: String, direction: Int) = edit { it.copy(moduleOrder = moved(it.moduleOrder, id, direction)) }
-    fun moveShortcut(id: String, direction: Int) = edit { it.copy(quickActions = moved(it.quickActions, id, direction)) }
+    fun moveModule(id: String, direction: Int) = edit {
+        val visible = it.moduleOrder.filter { m -> m != HomeModule.EXAMS.id }
+        val hidden = it.moduleOrder.filter { m -> m == HomeModule.EXAMS.id }
+        it.copy(moduleOrder = moved(visible, id, direction) + hidden)
+    }
+    fun moveShortcut(id: String, direction: Int) = edit {
+        val visible = it.quickActions.filter { s -> s != HomeShortcut.EXAMS.id }
+        it.copy(quickActions = moved(visible, id, direction))
+    }
     private fun moved(items: List<String>, id: String, direction: Int): List<String> {
         val from = items.indexOf(id)
         if (from < 0) return items

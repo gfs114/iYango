@@ -22,13 +22,39 @@ private val MANIFEST_JSON = Json {
 
 private val PRIVATE_172_HOST = Regex("^172\\.(1[6-9]|2\\d|3[01])\\.\\d{1,3}\\.\\d{1,3}$")
 
+private data class ExtractedApkAsset(
+    val url: String = "",
+    val name: String = "",
+    val sizeBytes: Long = 0L,
+)
+
 internal object AppUpdateManifestParser {
 
     fun parse(jsonText: String): ParsedUpdateManifest? {
         if (jsonText.isBlank()) return null
         val root = runCatching { MANIFEST_JSON.parseToJsonElement(jsonText) as? JsonObject }.getOrNull()
             ?: return null
+        return parseReleaseObject(root)
+    }
 
+    fun parseReleaseList(jsonText: String): List<AppUpdateRelease> {
+        if (jsonText.isBlank()) return emptyList()
+        val array = runCatching { MANIFEST_JSON.parseToJsonElement(jsonText) as? JsonArray }.getOrNull()
+            ?: return emptyList()
+        return array.mapNotNull { element ->
+            val obj = element as? JsonObject ?: return@mapNotNull null
+            if (firstBoolean(obj, listOf("draft")) == true) return@mapNotNull null
+            parseReleaseObject(obj)?.release
+        }
+    }
+
+    fun deriveReleasesListUrl(latestEndpoint: String): String? {
+        val trimmed = latestEndpoint.trim().trimEnd('/')
+        if (!trimmed.endsWith("/releases/latest", ignoreCase = true)) return null
+        return "${trimmed.dropLast("/latest".length)}?per_page=10"
+    }
+
+    private fun parseReleaseObject(root: JsonObject): ParsedUpdateManifest? {
         val versionCode = firstLong(root, listOf("versionCode", "version_code")) ?: 0L
         val rawTagOrVersion = firstString(root, listOf("versionName", "version_name", "tag_name", "tagName", "version"))
             .orEmpty()
@@ -41,9 +67,10 @@ internal object AppUpdateManifestParser {
 
         if (versionCode <= 0L && versionName.isBlank()) return null
 
-        val notes = firstString(root, listOf("releaseNotes", "release_notes", "changelog", "notes", "body"))
+        val rawNotes = firstString(root, listOf("releaseNotes", "release_notes", "changelog", "notes", "body"))
             .orEmpty()
             .trim()
+        val notes = extractInAppReleaseNotes(rawNotes)
         val publishedAt = firstString(root, listOf("publishedAt", "published_at", "date"))
             .orEmpty()
             .trim()
@@ -54,10 +81,17 @@ internal object AppUpdateManifestParser {
             root,
             listOf("downloadUrl", "download_url", "apkUrl", "apk_url", "url"),
         ).orEmpty().trim()
-        val assetDownload = extractGithubApkAssetUrl(root["assets"] as? JsonArray)
-        val downloadUrl = listOf(explicitDownload, assetDownload)
+        val asset = extractGithubApkAsset(root["assets"] as? JsonArray)
+        val downloadUrl = listOf(explicitDownload, asset.url)
             .firstOrNull { isSafeExternalUrl(it) }
             .orEmpty()
+
+        val apkSizeBytes = (firstLong(root, listOf("apkSizeBytes", "size")) ?: asset.sizeBytes)
+            .coerceAtLeast(0L)
+        val apkFileName = firstString(root, listOf("apkFileName", "fileName"))
+            .orEmpty()
+            .trim()
+            .ifEmpty { asset.name }
 
         val pageUrl = firstString(root, listOf("pageUrl", "page_url", "html_url"))
             .orEmpty()
@@ -74,9 +108,51 @@ internal object AppUpdateManifestParser {
                 pageUrl = pageUrl,
                 publishedAt = publishedAt,
                 forceUpdate = forceUpdate,
+                apkSizeBytes = apkSizeBytes,
+                apkFileName = apkFileName,
             ),
             minSupportedVersionCode = minSupported.coerceAtLeast(0L),
         )
+    }
+
+    internal fun extractInAppReleaseNotes(rawBody: String): String {
+        val trimmed = rawBody.trim()
+        if (trimmed.isEmpty()) return ""
+        val headingRegex = Regex("^#{1,3}\\s+(.+)$")
+        val kept = mutableListOf<String>()
+        var skipSection = false
+        for (rawLine in trimmed.lines()) {
+            val line = rawLine.trimEnd()
+            val stripped = line.trim()
+            val headingMatch = headingRegex.matchEntire(stripped)
+            if (headingMatch != null) {
+                val headingText = headingMatch.groupValues[1].trim()
+                val lower = headingText.lowercase(Locale.ROOT)
+                if (lower.contains("download") || headingText.contains("下载")) {
+                    skipSection = true
+                    continue
+                }
+                skipSection = false
+                if (lower == "更新内容" || lower == "changelog") {
+                    continue
+                }
+                kept += stripped
+                continue
+            }
+            if (skipSection) continue
+            if (stripped.startsWith("**Full Changelog**:", ignoreCase = true) ||
+                stripped.startsWith("Full Changelog:", ignoreCase = true)
+            ) {
+                continue
+            }
+            kept += line
+        }
+        val normalized = kept
+            .dropWhile { it.isBlank() }
+            .dropLastWhile { it.isBlank() }
+            .joinToString("\n")
+            .trim()
+        return normalized.ifEmpty { trimmed }
     }
 
     internal fun isSafeExternalUrl(raw: String): Boolean {
@@ -98,19 +174,20 @@ internal object AppUpdateManifestParser {
         }
     }
 
-    private fun extractGithubApkAssetUrl(assets: JsonArray?): String {
-        if (assets == null) return ""
-        val urls = assets.mapNotNull { element ->
+    private fun extractGithubApkAsset(assets: JsonArray?): ExtractedApkAsset {
+        if (assets == null) return ExtractedApkAsset()
+        val entries = assets.mapNotNull { element ->
             val obj = element as? JsonObject ?: return@mapNotNull null
             val url = (obj["browser_download_url"] as? JsonPrimitive)?.takeIf { it.isString }?.content?.trim()
                 .orEmpty()
             val name = (obj["name"] as? JsonPrimitive)?.takeIf { it.isString }?.content?.trim().orEmpty()
-            (name to url).takeIf { url.isNotEmpty() }
+            val size = firstLong(obj, listOf("size")) ?: 0L
+            ExtractedApkAsset(url = url, name = name, sizeBytes = size).takeIf { url.isNotEmpty() }
         }
-        val apk = urls.firstOrNull { (name, url) ->
-            name.endsWith(".apk", ignoreCase = true) || url.endsWith(".apk", ignoreCase = true)
+        val apk = entries.firstOrNull { entry ->
+            entry.name.endsWith(".apk", ignoreCase = true) || entry.url.endsWith(".apk", ignoreCase = true)
         }
-        return (apk ?: urls.firstOrNull())?.second.orEmpty()
+        return apk ?: entries.firstOrNull() ?: ExtractedApkAsset()
     }
 
     private fun firstString(obj: JsonObject, keys: List<String>): String? {

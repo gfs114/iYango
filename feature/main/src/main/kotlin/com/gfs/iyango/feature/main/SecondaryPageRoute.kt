@@ -68,7 +68,7 @@ sealed interface SecondaryPageRoute {
                     "timetable", "timetablecompare", "semester", "homesettings", "wallpaper", "font", "liquidglass",
                     "dockglass", "dockglass/dev", "reminder", "importexport", "aiimport", "aiconfig", "aiassistant",
                     "scheduleexport", "semestersummary", "settingsbackup", "creditprogress",
-                    "about", "runtimelogs",
+                    "about", "appupdate", "runtimelogs",
                 ),
             )
         }

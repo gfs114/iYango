@@ -146,8 +146,6 @@ fun DisplaySettingsScreen(
                             )
                         }
                     }
-                    SettingSwitchRow(title = "显示考试", checked = draft.showExams,
-                        onCheckedChange = { update(draft.copy(showExams = it)) })
                     SettingSwitchRow(title = "显示午休分隔", checked = draft.showLunchBreak,
                         onCheckedChange = { update(draft.copy(showLunchBreak = it)) })
                     SettingSwitchRow(title = "显示晚休分隔", checked = draft.showEveningBreak,

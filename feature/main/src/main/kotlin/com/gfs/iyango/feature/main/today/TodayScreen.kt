@@ -445,7 +445,9 @@ internal fun TodayReadyContent(
     onRestoreTemporaryDay: (Long, LocalDate) -> Unit = { _, _ -> },
 ) {
     val animateItems = animateLayoutChanges && LocalMotionEnabled.current
-    val visibleModules = remember(home) { home.sanitized().moduleOrder.filter { it !in home.hiddenModules } }
+    val visibleModules = remember(home) {
+        home.sanitized().moduleOrder.filter { it !in home.hiddenModules && it != HomeModule.EXAMS.id }
+    }
     val list = rememberLazyListState()
     val previousOrder = remember { arrayOf(visibleModules) }
     SideEffect {
@@ -489,7 +491,10 @@ internal fun TodayReadyContent(
                             onApplyMakeupWeekday = onApplyMakeupWeekday,
                             onRestoreTemporaryDay = onRestoreTemporaryDay,
                         )
-                        HomeModule.SHORTCUTS.id -> QuickTiles(home.quickActions, onQuickTile)
+                        HomeModule.SHORTCUTS.id -> QuickTiles(
+                            home.quickActions.filter { it != HomeShortcut.EXAMS.id },
+                            onQuickTile,
+                        )
                         HomeModule.CALENDAR.id -> MonthCalendarCard(state, paletteLight, paletteDark)
                         HomeModule.TOMORROW.id -> TomorrowSection(state, paletteLight, paletteDark, onCourseClick)
                         HomeModule.EXAMS.id -> UpcomingExamsSection(state.upcomingExams, onOpenExams)
@@ -497,7 +502,7 @@ internal fun TodayReadyContent(
                 }
             }
         }
-        if (home.hiddenModules.size == HomeModule.entries.size) item {
+        if (visibleModules.isEmpty()) item {
             Text("首页模块已全部隐藏，可从右上角首页设置重新开启", modifier = Modifier.padding(16.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
 

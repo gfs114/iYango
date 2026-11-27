@@ -24,6 +24,7 @@ import androidx.compose.ui.unit.dp
 import com.gfs.iyango.core.designsystem.component.GlassScaffold
 import com.gfs.iyango.core.designsystem.component.GlassTopBar
 import com.gfs.iyango.core.designsystem.component.GlassTopBarIconButton
+import com.gfs.iyango.core.designsystem.component.RefreshNoticeCapsule
 import com.gfs.iyango.core.designsystem.liquidglass.GlassMaterial
 import com.gfs.iyango.core.designsystem.liquidglass.GlassSurface
 import com.gfs.iyango.core.designsystem.theme.LocalBrand
@@ -175,8 +176,19 @@ internal fun MineGroupedRow(
 }
 
 @Composable
-fun MineCategoryScreen(category: MineCategory, onBack: () -> Unit, onNavigate: (MineDestination) -> Unit) {
-    MineSubpage(category.title, onBack) {
+fun MineCategoryScreen(
+    category: MineCategory,
+    onBack: () -> Unit,
+    onNavigate: (MineDestination) -> Unit,
+    notice: String? = null,
+    onDismissNotice: () -> Unit = {},
+) {
+    MineSubpage(
+        title = category.title,
+        onBack = onBack,
+        notice = notice,
+        onDismissNotice = onDismissNotice,
+    ) {
         MineGroupedCard {
             category.destinations.forEachIndexed { index, destination ->
                 MineGroupedRow(
@@ -192,12 +204,28 @@ fun MineCategoryScreen(category: MineCategory, onBack: () -> Unit, onNavigate: (
 
 /** Full-screen secondary page; padding scrolls under the same fixed glass header as other screens. */
 @Composable
-internal fun MineSubpage(title: String, onBack: () -> Unit, content: @Composable ColumnScope.() -> Unit) {
-    GlassScaffold(topBar = {
-        GlassTopBar(title = title, navigationIcon = {
-            GlassTopBarIconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "返回") }
-        })
-    }) { padding ->
+internal fun MineSubpage(
+    title: String,
+    onBack: () -> Unit,
+    notice: String? = null,
+    onDismissNotice: () -> Unit = {},
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    GlassScaffold(
+        topBar = {
+            GlassTopBar(title = title, navigationIcon = {
+                GlassTopBarIconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "返回") }
+            })
+        },
+        overlay = { padding ->
+            RefreshNoticeCapsule(
+                message = notice,
+                onDismiss = onDismissNotice,
+                topPadding = padding.calculateTopPadding(),
+                durationMillis = 2_000L,
+            )
+        },
+    ) { padding ->
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
             Column(Modifier.widthIn(max = 840.dp).fillMaxSize().verticalScroll(rememberScrollState())
                 .padding(padding).padding(horizontal = 16.dp, vertical = 12.dp),

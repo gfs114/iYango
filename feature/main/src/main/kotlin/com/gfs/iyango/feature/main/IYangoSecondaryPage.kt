@@ -5,20 +5,32 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material3.Icon
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import com.gfs.iyango.core.designsystem.component.GlassScaffold
+import com.gfs.iyango.core.designsystem.component.GlassTopBar
+import com.gfs.iyango.core.designsystem.component.GlassTopBarIconButton
 import com.gfs.iyango.core.designsystem.component.LocalGlassPageBackground
 import com.gfs.iyango.core.designsystem.liquidglass.GlassBackdropHost
 import com.gfs.iyango.core.designsystem.liquidglass.LocalGlassPalette
 import com.gfs.iyango.core.designsystem.motion.LocalMotionEnabled
 import com.gfs.iyango.core.domain.ThemeSettings
 import com.gfs.iyango.feature.main.about.AboutScreen
+import com.gfs.iyango.feature.main.about.AppUpdateScreen
 import com.gfs.iyango.feature.main.about.RuntimeLogScreen
 import com.gfs.iyango.feature.main.ai.AiAssistantScreen
 import com.gfs.iyango.feature.main.ai.AiConfigScreen
@@ -27,7 +39,6 @@ import com.gfs.iyango.feature.main.classroom.ClassroomQueryScreen
 import com.gfs.iyango.feature.main.coursemanage.CourseManageScreen
 import com.gfs.iyango.feature.main.creditprogress.CreditProgressScreen
 import com.gfs.iyango.feature.main.editor.CourseEditorScreen
-import com.gfs.iyango.feature.main.exam.ExamListScreen
 import com.gfs.iyango.feature.main.export.ScheduleExportScreen
 import com.gfs.iyango.feature.main.importexport.AiImportScreen
 import com.gfs.iyango.feature.main.importexport.ImportExportScreen
@@ -156,7 +167,16 @@ private fun SecondaryRouteContent(
     val wallpaperViewModel = wallpaperUi.wallpaperViewModel
     val latestThemeSettings by rememberUpdatedState(themeSettings)
     val latestOnThemeSettingsChange by rememberUpdatedState(onThemeSettingsChange)
-    val onNavigateMine = remember { { destination: MineDestination -> openRoute(destination.route) } }
+    var noticeMessage by remember { mutableStateOf<String?>(null) }
+    val onNavigateMine = remember {
+        { destination: MineDestination ->
+            if (destination == MineDestination.EXAMS) {
+                noticeMessage = "敬请期待"
+            } else {
+                openRoute(destination.route)
+            }
+        }
+    }
 
     when (route) {
         is SecondaryPageRoute.Editor -> CourseEditorScreen(onBack = onBack)
@@ -203,7 +223,13 @@ private fun SecondaryRouteContent(
                     onSaveAccentPreset = wallpaperViewModel::saveAccentPreset,
                     onRemoveAccentPreset = wallpaperViewModel::removeAccentPreset,
                 )
-                category != null -> MineCategoryScreen(category, onBack = onBack, onNavigate = onNavigateMine)
+                category != null -> MineCategoryScreen(
+                    category = category,
+                    onBack = onBack,
+                    onNavigate = onNavigateMine,
+                    notice = noticeMessage,
+                    onDismissNotice = { noticeMessage = null },
+                )
                 route.id == "courses" -> CourseManageScreen(
                     onBack = onBack,
                     onAddCourse = { openRoute("editor?courseId=0") },
@@ -218,7 +244,7 @@ private fun SecondaryRouteContent(
                     onOpenHistory = { openRoute("synchistory") },
                 )
                 route.id == "synchistory" -> SyncHistoryScreen(onBack = onBack)
-                route.id == "exams" -> ExamListScreen(onBack = onBack)
+                route.id == "exams" -> ExamComingSoonScreen(onBack = onBack)
                 route.id == "timetable" -> TimetableManageScreen(
                     onBack = onBack,
                     onOpenSync = { openRoute("schoolsync") },
@@ -298,11 +324,42 @@ private fun SecondaryRouteContent(
                     onBack = onBack,
                     onOpenDockGlassDev = { openRoute("dockglass/dev") },
                     onOpenRuntimeLogs = { openRoute("runtimelogs") },
+                    onOpenAppUpdate = { openRoute("appupdate") },
                 )
+                route.id == "appupdate" -> AppUpdateScreen(onBack = onBack)
                 route.id == "runtimelogs" -> RuntimeLogScreen(onBack = onBack)
                 // 白名单内未覆盖的兜底（理论上不可达：parse 保证只有已知路由）。
                 else -> Box(Modifier.fillMaxSize())
             }
+        }
+    }
+}
+
+@Composable
+private fun ExamComingSoonScreen(onBack: () -> Unit) {
+    GlassScaffold(
+        topBar = {
+            GlassTopBar(
+                title = "考试安排",
+                navigationIcon = {
+                    GlassTopBarIconButton(onClick = onBack) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
+                    }
+                },
+            )
+        },
+    ) { padding ->
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                text = "敬请期待",
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
     }
 }

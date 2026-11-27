@@ -55,6 +55,7 @@ import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.semantics.clearAndSetSemantics
@@ -166,6 +167,7 @@ fun IYangoMainApp(
         MainDestination(route = "grades", label = "成绩", icon = Icons.Filled.Star),
         MainDestination(route = "mine", label = "我的", icon = Icons.Filled.Person),
     ) }
+    val context = LocalContext.current
     val colorScheme = MaterialTheme.colorScheme
     val wallpaperUi = rememberGlobalWallpaperUi(themeSettings, onThemeSettingsChange, isMainShell = true)
     val appPreferences = wallpaperUi.preferences
@@ -218,6 +220,11 @@ fun IYangoMainApp(
     // 快捷入口/组件显式路由：白名单外的目标直接丢弃。
     LaunchedEffect(pendingRoute) {
         val route = pendingRoute ?: return@LaunchedEffect
+        if (route == "exams") {
+            android.widget.Toast.makeText(context, "敬请期待", android.widget.Toast.LENGTH_SHORT).show()
+            onPendingRouteConsumed()
+            return@LaunchedEffect
+        }
         if (route !in ExternalRoutes || SecondaryPageRoute.parse(route) == null) {
             onPendingRouteConsumed()
             return@LaunchedEffect
@@ -280,7 +287,7 @@ fun IYangoMainApp(
                         onOpenImportExport = { openRoute("importexport") },
                         onOpenSemesterManage = { openRoute("semester") },
                         onOpenCourseManage = { openRoute("courses") },
-                        onOpenExams = { openRoute("exams") },
+                        onOpenExams = { android.widget.Toast.makeText(context, "敬请期待", android.widget.Toast.LENGTH_SHORT).show() },
                         onOpenSchool = { openRoute("school") },
                         onOpenHomeSettings = { openRoute("homesettings") },
                         onOpenClassroom = { openRoute("classroom") },
@@ -466,6 +473,12 @@ fun IYangoMainApp(
                     release = release,
                     onDismiss = appUpdateViewModel::dismissPrompt,
                     onIgnore = appUpdateViewModel::ignoreVersion,
+                    onOpenUpdatePage = {
+                        if (!release.forceUpdate) {
+                            appUpdateViewModel.dismissPrompt()
+                        }
+                        openRoute("appupdate")
+                    },
                 )
             }
         }
