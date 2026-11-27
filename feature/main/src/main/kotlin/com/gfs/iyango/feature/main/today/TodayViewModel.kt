@@ -21,6 +21,7 @@ import com.gfs.iyango.core.domain.HolidayMakeupCodec
 import com.gfs.iyango.core.domain.HolidayRepositoryPort
 import com.gfs.iyango.core.domain.MoveOccurrence
 import com.gfs.iyango.core.domain.NoopHolidayRepository
+import com.gfs.iyango.core.domain.PartnerScheduleCalculator
 import com.gfs.iyango.core.domain.RefreshCoordinatorPort
 import com.gfs.iyango.core.domain.RefreshOutcome
 import com.gfs.iyango.core.domain.RefreshResource
@@ -195,6 +196,60 @@ class TodayViewModel @Inject constructor(
     private val presentationNow = now.distinctUntilChanged { before, after ->
         before.withSecond(0).withNano(0) == after.withSecond(0).withNano(0)
     }
+    private data class PartnerQueryKey(
+        val date: LocalDate,
+        val revision: Long,
+        val partnerId: Long,
+        val partnerLabel: String,
+    )
+
+    private data class PartnerSnapshot(
+        val date: LocalDate,
+        val partnerId: Long,
+        val partnerLabel: String,
+        val occurrences: List<CourseOccurrence>,
+    )
+
+    private val partnerDaySnapshot: Flow<PartnerSnapshot?> = appSettings.appPreferences
+        .map { it.partnerTimetableId to it.partnerLabel }
+        .distinctUntilChanged()
+        .flatMapLatest { (partnerId, partnerLabel) ->
+            if (partnerId <= 0L) {
+                flowOf<PartnerSnapshot?>(null)
+            } else {
+                combine(
+                    dates,
+                    localObservationRevision,
+                    timetableRepository.observeAll(),
+                    timetableRepository.observeCurrent(),
+                ) { date, rev, all, current ->
+                    val valid = partnerId != current?.id && all.any { it.id == partnerId }
+                    if (!valid) null else PartnerQueryKey(date, rev, partnerId, partnerLabel)
+                }.distinctUntilChanged().flatMapLatest { key ->
+                    if (key == null) {
+                        flowOf<PartnerSnapshot?>(null)
+                    } else {
+                        flow<PartnerSnapshot?> {
+                            val occurrences = runCatching {
+                                effectiveSchedule.resolveTimetableRange(key.partnerId, key.date..key.date)
+                            }.getOrDefault(emptyList())
+                            emit(
+                                PartnerSnapshot(
+                                    date = key.date,
+                                    partnerId = key.partnerId,
+                                    partnerLabel = key.partnerLabel,
+                                    occurrences = occurrences,
+                                ),
+                            )
+                        }
+                    }
+                }
+            }
+        }.catch { error ->
+            if (error is CancellationException) throw error
+            emit(null)
+        }
+
     val state: StateFlow<TodayUiState> = localObservationRevision.flatMapLatest {
         flow {
             emitAll(snapshots.combine(presentationNow) { result, instant ->
@@ -209,6 +264,22 @@ class TodayViewModel @Inject constructor(
             }.combine(holidayRepository.holidays) { schedule, holidays ->
                 if (schedule is TodayUiState.Ready) {
                     schedule.copy(todayHoliday = holidays[schedule.today])
+                } else {
+                    schedule
+                }
+            }.combine(partnerDaySnapshot) { schedule, partner ->
+                if (schedule is TodayUiState.Ready && partner != null && partner.date == schedule.today) {
+                    val myToday = schedule.effectiveDays.firstOrNull { it.date == schedule.today }?.occurrences
+                        ?: schedule.todayRows.map { it.occurrence }
+                    schedule.copy(
+                        partnerSummary = PartnerScheduleCalculator.projectToday(
+                            myOccurrences = myToday,
+                            partnerOccurrences = partner.occurrences,
+                            now = schedule.now,
+                            partnerTimetableId = partner.partnerId,
+                            partnerName = partner.partnerLabel,
+                        ),
+                    )
                 } else {
                     schedule
                 }

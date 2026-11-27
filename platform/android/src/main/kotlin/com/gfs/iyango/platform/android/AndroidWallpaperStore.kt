@@ -5,14 +5,20 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Matrix
 import android.media.ExifInterface
+import android.media.MediaMetadataRetriever
 import android.net.Uri
+import android.provider.OpenableColumns
 import com.gfs.iyango.core.domain.CropPixelRegion
+import com.gfs.iyango.core.domain.ImportedWallpaperMedia
 import com.gfs.iyango.core.domain.PreparedWallpaper
+import com.gfs.iyango.core.domain.WallpaperEnginePackageParser
+import com.gfs.iyango.core.domain.WallpaperMediaType
 import com.gfs.iyango.core.domain.WallpaperStore
 import com.gfs.iyango.core.domain.WallpaperTone
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.File
 import java.io.FileOutputStream
+import java.util.Locale
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.Dispatchers
@@ -123,6 +129,14 @@ class AndroidWallpaperStore @Inject constructor(
 
     override suspend fun extractAccentHex(relativePath: String): String? = withContext(Dispatchers.IO) {
         val absolutePath = resolve(relativePath) ?: return@withContext null
+        if (com.gfs.iyango.core.domain.WallpaperMediaKind.isVideoPath(relativePath)) {
+            val frame = extractVideoFrame(absolutePath) ?: return@withContext null
+            return@withContext try {
+                extractAccentFromBitmap(frame)
+            } finally {
+                frame.recycle()
+            }
+        }
         runCatching {
             val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
             BitmapFactory.decodeFile(absolutePath, bounds)
@@ -132,26 +146,214 @@ class AndroidWallpaperStore @Inject constructor(
             }
             val bitmap = BitmapFactory.decodeFile(absolutePath, options) ?: return@runCatching null
             try {
-                val total = bitmap.width * bitmap.height
-                if (total <= 0) return@runCatching null
-                val step = maxOf(1, total / MAX_TONE_SAMPLES)
-                val stepX = maxOf(1, kotlin.math.sqrt(step.toDouble()).toInt())
-                val stepY = maxOf(1, step / stepX)
-                val samples = ArrayList<Int>(MAX_TONE_SAMPLES)
-                var y = 0
-                while (y < bitmap.height) {
-                    var x = 0
-                    while (x < bitmap.width) {
-                        samples += bitmap.getPixel(x, y)
-                        x += stepX
-                    }
-                    y += stepY
-                }
-                WallpaperTone.extractDominantAccentHex(samples.toIntArray())
+                extractAccentFromBitmap(bitmap)
             } finally {
                 bitmap.recycle()
             }
         }.getOrNull()
+    }
+
+    override suspend fun importVideoOrPackage(sourceUri: String, slot: String): ImportedWallpaperMedia? =
+        withContext(Dispatchers.IO) {
+            runCatching {
+                val uri = Uri.parse(sourceUri)
+                if (uri.scheme.isNullOrEmpty()) return@runCatching null
+
+                val displayName = queryDisplayName(uri).orEmpty()
+                val mime = context.contentResolver.getType(uri).orEmpty().lowercase(Locale.ROOT)
+                val ext = displayName.substringAfterLast('.', "").lowercase(Locale.ROOT)
+                val safeSlot = sanitizeSlot(slot)
+                val dir = File(context.filesDir, SAVED_DIR).apply { mkdirs() }
+
+                val looksLikePackage = ext in PACKAGE_EXTENSIONS ||
+                    mime == "application/zip" ||
+                    (!mime.startsWith("video/") && !mime.startsWith("image/") && peekMagicIsPackage(uri))
+
+                if (looksLikePackage) {
+                    val tempDir = File(context.cacheDir, TEMP_DIR).apply { mkdirs() }
+                    var extractedTempFile: File? = null
+                    val extracted = context.contentResolver.openInputStream(uri)?.use { stream ->
+                        WallpaperEnginePackageParser.extractBestMedia(stream) { chosenExt ->
+                            val out = File(tempDir, "pkg_${System.currentTimeMillis()}.$chosenExt")
+                            extractedTempFile = out
+                            FileOutputStream(out)
+                        }
+                    }
+                    val tempFile = extractedTempFile
+                    if (extracted != null && tempFile != null && tempFile.isFile && tempFile.length() > 0L) {
+                        try {
+                            if (extracted.mediaType == WallpaperMediaType.VIDEO) {
+                                val normalizedExt = if (extracted.extension == "webm") "webm" else "mp4"
+                                val lum = sampleVideoLuminance(tempFile.absolutePath)
+                                val target = File(dir, "wallpaper_${safeSlot}_${System.currentTimeMillis()}.$normalizedExt")
+                                copyReplacing(tempFile, target)
+                                if (!safeSlot.startsWith(WallpaperStore.SLOT_CAROUSEL_PREFIX)) {
+                                    cleanupSlotFiles(dir, "wallpaper_${safeSlot}_", target.name)
+                                }
+                                return@runCatching ImportedWallpaperMedia(
+                                    relativePath = "$SAVED_DIR/${target.name}",
+                                    isVideo = true,
+                                    averageLuminance = lum,
+                                    isScenePreview = extracted.hasScenePackage,
+                                )
+                            } else {
+                                val prepared = prepareFromLocalImageFile(tempFile) ?: return@runCatching null
+                                val rel = commit(prepared.tempPath, slot, null) ?: run {
+                                    discard(prepared.tempPath)
+                                    return@runCatching null
+                                }
+                                return@runCatching ImportedWallpaperMedia(
+                                    relativePath = rel,
+                                    isVideo = false,
+                                    averageLuminance = prepared.averageLuminance,
+                                    isScenePreview = extracted.hasScenePackage,
+                                )
+                            }
+                        } finally {
+                            tempFile.delete()
+                        }
+                    }
+                    tempFile?.delete()
+                    if (ext in PACKAGE_EXTENSIONS) return@runCatching null
+                }
+
+                if (mime.startsWith("video/") || ext in DIRECT_VIDEO_EXTENSIONS) {
+                    val normalizedExt = if (ext == "webm" || mime.contains("webm")) "webm" else "mp4"
+                    val tempDir = File(context.cacheDir, TEMP_DIR).apply { mkdirs() }
+                    val tempVideo = File(tempDir, "vid_${System.currentTimeMillis()}.$normalizedExt")
+                    try {
+                        val copied = context.contentResolver.openInputStream(uri)?.use { input ->
+                            FileOutputStream(tempVideo).use { output ->
+                                copyStreamCapped(input, output, MAX_DIRECT_VIDEO_BYTES)
+                            }
+                        } ?: -1L
+                        if (copied <= 0L) return@runCatching null
+                        val lum = sampleVideoLuminance(tempVideo.absolutePath)
+                        val target = File(dir, "wallpaper_${safeSlot}_${System.currentTimeMillis()}.$normalizedExt")
+                        copyReplacing(tempVideo, target)
+                        if (!safeSlot.startsWith(WallpaperStore.SLOT_CAROUSEL_PREFIX)) {
+                            cleanupSlotFiles(dir, "wallpaper_${safeSlot}_", target.name)
+                        }
+                        return@runCatching ImportedWallpaperMedia(
+                            relativePath = "$SAVED_DIR/${target.name}",
+                            isVideo = true,
+                            averageLuminance = lum,
+                        )
+                    } finally {
+                        tempVideo.delete()
+                    }
+                }
+
+                val prepared = prepare(sourceUri) ?: return@runCatching null
+                val rel = commit(prepared.tempPath, slot, null) ?: run {
+                    discard(prepared.tempPath)
+                    return@runCatching null
+                }
+                ImportedWallpaperMedia(
+                    relativePath = rel,
+                    isVideo = false,
+                    averageLuminance = prepared.averageLuminance,
+                )
+            }.getOrNull()
+        }
+
+    private fun extractAccentFromBitmap(bitmap: Bitmap): String? {
+        val total = bitmap.width * bitmap.height
+        if (total <= 0) return null
+        val step = maxOf(1, total / MAX_TONE_SAMPLES)
+        val stepX = maxOf(1, kotlin.math.sqrt(step.toDouble()).toInt())
+        val stepY = maxOf(1, step / stepX)
+        val samples = ArrayList<Int>(MAX_TONE_SAMPLES)
+        var y = 0
+        while (y < bitmap.height) {
+            var x = 0
+            while (x < bitmap.width) {
+                samples += bitmap.getPixel(x, y)
+                x += stepX
+            }
+            y += stepY
+        }
+        return WallpaperTone.extractDominantAccentHex(samples.toIntArray())
+    }
+
+    private fun extractVideoFrame(absolutePath: String): Bitmap? = runCatching {
+        val retriever = MediaMetadataRetriever()
+        try {
+            retriever.setDataSource(absolutePath)
+            retriever.getFrameAtTime(0L)
+                ?: retriever.getFrameAtTime(-1L)
+                ?: retriever.getFrameAtTime(1_000_000L)
+        } finally {
+            runCatching { retriever.release() }
+        }
+    }.getOrNull()
+
+    private fun sampleVideoLuminance(absolutePath: String): Float {
+        val frame = extractVideoFrame(absolutePath) ?: return DEFAULT_VIDEO_LUMINANCE
+        return try {
+            val scaled = downscale(frame, 128, 128)
+            try {
+                sampledLuminance(scaled)
+            } finally {
+                if (scaled !== frame) scaled.recycle()
+            }
+        } finally {
+            frame.recycle()
+        }
+    }
+
+    private fun prepareFromLocalImageFile(file: File): PreparedWallpaper? {
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeFile(file.absolutePath, bounds)
+        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
+        val options = BitmapFactory.Options().apply {
+            inSampleSize = sampleSizeFor(bounds.outWidth, bounds.outHeight, MAX_SOURCE_DIMEN)
+        }
+        val decoded = BitmapFactory.decodeFile(file.absolutePath, options) ?: return null
+        val scaled = downscale(decoded, MAX_OUTPUT_WIDTH, MAX_OUTPUT_HEIGHT)
+        val prepared = writeTemp(scaled)
+        if (scaled !== decoded) scaled.recycle()
+        decoded.recycle()
+        return prepared
+    }
+
+    private fun queryDisplayName(uri: Uri): String? = runCatching {
+        context.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { c ->
+            if (c.moveToFirst()) c.getString(0) else null
+        }
+    }.getOrNull()
+
+    private fun peekMagicIsPackage(uri: Uri): Boolean = runCatching {
+        context.contentResolver.openInputStream(uri)?.use { stream ->
+            val buf = ByteArray(12)
+            val read = stream.read(buf)
+            if (read < 4) return@runCatching false
+            val head4 = buf.copyOfRange(0, 4).toString(Charsets.US_ASCII)
+            if (head4 == "TEXV") return@runCatching true
+            if (read < 8) return@runCatching false
+            val ascii = buf.copyOfRange(4, read).toString(Charsets.US_ASCII)
+            ascii.startsWith("PKGV") || ascii.startsWith("PKGM") || ascii.startsWith("MPKG")
+        } ?: false
+    }.getOrDefault(false)
+
+    private fun copyReplacing(src: File, dest: File) {
+        if (dest.exists()) dest.delete()
+        if (!src.renameTo(dest)) {
+            src.copyTo(dest, overwrite = true)
+        }
+    }
+
+    private fun copyStreamCapped(input: java.io.InputStream, output: FileOutputStream, limitBytes: Long): Long {
+        val buffer = ByteArray(16 * 1024)
+        var total = 0L
+        while (true) {
+            val read = input.read(buffer)
+            if (read <= 0) break
+            total += read
+            if (total > limitBytes) return -1L
+            output.write(buffer, 0, read)
+        }
+        return total
     }
 
     override suspend fun discard(tempAbsolutePath: String) = withContext(Dispatchers.IO) {
@@ -299,7 +501,7 @@ class AndroidWallpaperStore @Inject constructor(
     /** 只匹配当前完整槽位的时间戳文件，global 不能清理 global_dark。 */
     private fun cleanupSlotFiles(dir: File, prefix: String, keepName: String) {
         runCatching {
-            val pattern = Regex("${Regex.escape(prefix)}[0-9]+\\.jpg")
+            val pattern = Regex("${Regex.escape(prefix)}[0-9]+\\.(jpg|mp4|webm)")
             dir.listFiles { file -> pattern.matches(file.name) && file.name != keepName }
                 ?.forEach { it.delete() }
         }
@@ -321,5 +523,9 @@ class AndroidWallpaperStore @Inject constructor(
         const val MAX_OUTPUT_HEIGHT = 2560
         const val JPEG_QUALITY = 88
         const val MAX_TONE_SAMPLES = 4096
+        const val DEFAULT_VIDEO_LUMINANCE = 0.45f
+        const val MAX_DIRECT_VIDEO_BYTES = 150L * 1024L * 1024L
+        val PACKAGE_EXTENSIONS = setOf("mpkg", "pkg", "zip", "tex")
+        val DIRECT_VIDEO_EXTENSIONS = setOf("mp4", "webm")
     }
 }

@@ -77,6 +77,7 @@ import com.gfs.iyango.core.designsystem.component.ErrorState
 import com.gfs.iyango.core.designsystem.component.LoadingState
 import com.gfs.iyango.core.designsystem.component.RefreshNoticeCapsule
 import com.gfs.iyango.core.designsystem.component.SectionHeader
+import com.gfs.iyango.core.designsystem.component.StatusBadge
 import com.gfs.iyango.core.designsystem.liquidglass.GlassMaterial
 import com.gfs.iyango.core.designsystem.liquidglass.GlassSurface
 import com.gfs.iyango.core.designsystem.liquidglass.LiquidFilterChip
@@ -93,6 +94,9 @@ import com.gfs.iyango.core.model.HomeShortcut
 import com.gfs.iyango.core.domain.BuildingTransferDetector
 import com.gfs.iyango.core.domain.BuildingTransferWarning
 import com.gfs.iyango.core.domain.CourseOccurrence
+import com.gfs.iyango.core.domain.PartnerScheduleCalculator
+import com.gfs.iyango.core.domain.PartnerSlotStatus
+import com.gfs.iyango.core.domain.PartnerTodaySummary
 import com.gfs.iyango.core.domain.TodayCourseTiming
 import kotlinx.coroutines.flow.StateFlow
 import androidx.lifecycle.repeatOnLifecycle
@@ -143,6 +147,7 @@ fun TodayScreen(
     onOpenSettingsBackup: () -> Unit = {},
     onOpenCreditProgress: () -> Unit = {},
     onOpenAiAssistant: () -> Unit = {},
+    onOpenCompare: () -> Unit = {},
     viewModel: TodayViewModel = hiltViewModel(),
     homePreferences: HomePreferences? = null,
 ) {
@@ -287,6 +292,7 @@ fun TodayScreen(
                                 timing = viewModel.timing,
                                 onOpenSchedule = onOpenSchedule,
                                 onOpenExams = onOpenExams,
+                                onOpenCompare = onOpenCompare,
                                 onProfileClick = onOpenSchool,
                                 onApplyMakeupWeekday = viewModel::applyMakeupWeekday,
                                 onRestoreTemporaryDay = viewModel::restoreTemporaryDay,
@@ -443,6 +449,7 @@ internal fun TodayReadyContent(
     animateLayoutChanges: Boolean = false,
     onApplyMakeupWeekday: (LocalDate, Int) -> Unit = { _, _ -> },
     onRestoreTemporaryDay: (Long, LocalDate) -> Unit = { _, _ -> },
+    onOpenCompare: () -> Unit = {},
 ) {
     val animateItems = animateLayoutChanges && LocalMotionEnabled.current
     val visibleModules = remember(home) {
@@ -481,16 +488,21 @@ internal fun TodayReadyContent(
                     if (id != HomeModule.PROFILE.id) SectionHeader(title = homeModuleTitle(id))
                     when (id) {
                         HomeModule.PROFILE.id -> ProfileCard(state, onProfileClick)
-                        HomeModule.TODAY.id -> TodayCoursesSection(
-                            state = state,
-                            paletteLight = paletteLight,
-                            paletteDark = paletteDark,
-                            onCourseClick = onCourseClick,
-                            onOpenSchedule = onOpenSchedule,
-                            timing = timing,
-                            onApplyMakeupWeekday = onApplyMakeupWeekday,
-                            onRestoreTemporaryDay = onRestoreTemporaryDay,
-                        )
+                        HomeModule.TODAY.id -> Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                            TodayCoursesSection(
+                                state = state,
+                                paletteLight = paletteLight,
+                                paletteDark = paletteDark,
+                                onCourseClick = onCourseClick,
+                                onOpenSchedule = onOpenSchedule,
+                                timing = timing,
+                                onApplyMakeupWeekday = onApplyMakeupWeekday,
+                                onRestoreTemporaryDay = onRestoreTemporaryDay,
+                            )
+                            state.partnerSummary?.let { partner ->
+                                PartnerTodayCard(summary = partner, onClick = onOpenCompare)
+                            }
+                        }
                         HomeModule.SHORTCUTS.id -> QuickTiles(
                             home.quickActions.filter { it != HomeShortcut.EXAMS.id },
                             onQuickTile,
@@ -656,6 +668,7 @@ private fun TodayCoursesSection(
     timing: StateFlow<TodayCourseTiming>? = null,
     onApplyMakeupWeekday: (LocalDate, Int) -> Unit = { _, _ -> },
     onRestoreTemporaryDay: (Long, LocalDate) -> Unit = { _, _ -> },
+    onOpenCompare: () -> Unit = {},
 ) {
     val todayOccurrences = remember(state.todayRows) { state.todayRows.map { it.occurrence } }
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -1175,3 +1188,199 @@ private data class TodayAdjustTarget(
     val sourceDate: String,
     val occurrenceId: String? = null,
 )
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun PartnerTodayCard(
+    summary: PartnerTodaySummary,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    GlassSurface(
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(20.dp))
+            .clickable(onClick = onClick),
+        shape = RoundedCornerShape(20.dp),
+        material = GlassMaterial.CONTENT,
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = "双人实时",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    summary.syncEndMinute?.let { min ->
+                        StatusBadge(text = "${PartnerScheduleCalculator.formatMinute(min)} 同时下课")
+                    }
+                    summary.nextCommonFree?.let { free ->
+                        StatusBadge(text = "共空 ${free.format()}")
+                    }
+                }
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                PartnerSideTile(
+                    label = "我",
+                    status = summary.myStatus,
+                    remainingCount = summary.myRemainingCount,
+                    modifier = Modifier.weight(1f),
+                )
+                PartnerSideTile(
+                    label = summary.partnerName,
+                    status = summary.partnerStatus,
+                    remainingCount = summary.partnerRemainingCount,
+                    modifier = Modifier.weight(1f),
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun PartnerSideTile(
+    label: String,
+    status: PartnerSlotStatus,
+    remainingCount: Int,
+    modifier: Modifier = Modifier,
+) {
+    Surface(
+        modifier = modifier,
+        shape = RoundedCornerShape(14.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 9.dp),
+            verticalArrangement = Arrangement.spacedBy(3.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = label,
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f),
+                )
+                if (remainingCount > 0) {
+                    Text(
+                        text = "余${remainingCount}节",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+            when (status) {
+                is PartnerSlotStatus.InClass -> {
+                    Text(
+                        text = "上课中 剩${status.minutesRemaining}分",
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.Medium,
+                        color = MaterialTheme.colorScheme.primary,
+                        maxLines = 1,
+                    )
+                    Text(
+                        text = status.occurrence.course.name,
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    val meta = buildString {
+                        val room = status.occurrence.course.classroom.trim()
+                        if (room.isNotEmpty()) {
+                            append(room)
+                            append(' ')
+                        }
+                        append(PartnerScheduleCalculator.formatMinute(status.occurrence.startMinute ?: 0))
+                        append('-')
+                        append(PartnerScheduleCalculator.formatMinute(status.occurrence.endMinute ?: 0))
+                    }
+                    Text(
+                        text = meta,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+
+                is PartnerSlotStatus.Upcoming -> {
+                    Text(
+                        text = "${status.minutesUntil}分钟后",
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.Medium,
+                        color = MaterialTheme.colorScheme.primary,
+                        maxLines = 1,
+                    )
+                    Text(
+                        text = status.occurrence.course.name,
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    val meta = buildString {
+                        val room = status.occurrence.course.classroom.trim()
+                        if (room.isNotEmpty()) {
+                            append(room)
+                            append(' ')
+                        }
+                        append(PartnerScheduleCalculator.formatMinute(status.occurrence.startMinute ?: 0))
+                        append('-')
+                        append(PartnerScheduleCalculator.formatMinute(status.occurrence.endMinute ?: 0))
+                    }
+                    Text(
+                        text = meta,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+
+                PartnerSlotStatus.FinishedToday -> {
+                    Text(
+                        text = "今日已完结",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                    )
+                }
+
+                PartnerSlotStatus.FreeToday -> {
+                    Text(
+                        text = "今日空闲",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                    )
+                }
+            }
+        }
+    }
+}

@@ -2,6 +2,7 @@ package com.gfs.iyango.feature.main.timetable
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.gfs.iyango.core.domain.AppSettingsPort
 import com.gfs.iyango.core.domain.ScheduleDataPort
 import com.gfs.iyango.core.domain.TimetableRepositoryPort
 import com.gfs.iyango.core.model.Timetable
@@ -13,6 +14,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
@@ -25,7 +27,16 @@ import kotlinx.coroutines.launch
 class TimetableManageViewModel @Inject constructor(
     private val timetableRepository: TimetableRepositoryPort,
     private val scheduleData: ScheduleDataPort,
+    private val appSettings: AppSettingsPort,
 ) : ViewModel() {
+
+    val partnerTimetableId: StateFlow<Long> = appSettings.appPreferences
+        .map { it.partnerTimetableId }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0L)
+
+    val partnerLabel: StateFlow<String> = appSettings.appPreferences
+        .map { it.partnerLabel }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), "TA")
 
     /** 待删除课表（非 null 时展示确认弹窗，携带影响面统计）。 */
     val pendingDelete = MutableStateFlow<PendingDelete?>(null)
@@ -43,8 +54,34 @@ class TimetableManageViewModel @Inject constructor(
     /** 把 [id] 设为当前课表。 */
     fun setCurrent(id: Long) {
         viewModelScope.launch {
-            runCatching { timetableRepository.setCurrent(id) }
-                .onFailure { error.value = "切换失败：${it.message}" }
+            runCatching {
+                timetableRepository.setCurrent(id)
+                if (partnerTimetableId.value == id) {
+                    appSettings.transformAppPreferences { it.copy(partnerTimetableId = 0L) }
+                }
+            }.onFailure { error.value = "切换失败：${it.message}" }
+        }
+    }
+
+    fun setPartnerTimetable(timetableId: Long, label: String) {
+        val cleanLabel = label.trim().take(12).ifEmpty { "TA" }
+        viewModelScope.launch {
+            runCatching {
+                appSettings.transformAppPreferences {
+                    it.copy(
+                        partnerTimetableId = timetableId.coerceAtLeast(0L),
+                        partnerLabel = cleanLabel,
+                    ).sanitized()
+                }
+            }.onFailure { error.value = "设置失败：${it.message}" }
+        }
+    }
+
+    fun clearPartnerTimetable() {
+        viewModelScope.launch {
+            runCatching {
+                appSettings.transformAppPreferences { it.copy(partnerTimetableId = 0L) }
+            }.onFailure { error.value = "取消失败：${it.message}" }
         }
     }
 
@@ -113,6 +150,13 @@ class TimetableManageViewModel @Inject constructor(
         viewModelScope.launch {
             busy.value = true
             runCatching { timetableRepository.delete(target.timetable.id) }
+                .onSuccess {
+                    if (partnerTimetableId.value == target.timetable.id) {
+                        runCatching {
+                            appSettings.transformAppPreferences { it.copy(partnerTimetableId = 0L) }
+                        }
+                    }
+                }
                 .onFailure { error.value = "删除失败：${it.message}" }
             busy.value = false
             pendingDelete.value = null

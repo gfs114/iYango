@@ -12,6 +12,7 @@ import com.gfs.iyango.core.designsystem.component.GlassTopBarIconButton
 import com.gfs.iyango.core.designsystem.component.SectionCard
 import com.gfs.iyango.core.designsystem.component.SettingSliderRow
 import com.gfs.iyango.core.designsystem.component.SettingSwitchRow
+import com.gfs.iyango.core.designsystem.component.StatusBadge
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -158,6 +159,18 @@ fun WallpaperScreen(
     ) { uri ->
         if (uri != null) viewModel.prepare(uri.toString(), pickTarget.slot, pickTarget.dark)
     }
+    val packageOrVideoPicker = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument(),
+    ) { uri ->
+        if (uri != null) {
+            viewModel.importWallpaperEngineOrVideo(
+                sourceUri = uri.toString(),
+                slot = WallpaperStore.SLOT_GLOBAL,
+                dark = isDarkNow,
+                darkTheme = isDarkNow,
+            )
+        }
+    }
     val launchPicker: (String, Boolean) -> Unit = { slot, dark ->
         pickTarget = PickTarget(slot, dark)
         picker.launch(
@@ -195,6 +208,17 @@ fun WallpaperScreen(
             ),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
+            item(key = "wallpaper_engine") {
+                SectionCard(title = "动态壁纸") {
+                    LiquidOutlinedButton(
+                        onClick = { packageOrVideoPicker.launch(arrayOf("*/*")) },
+                        enabled = !busy,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Text("导入视频 / 包", maxLines = 1, softWrap = false)
+                    }
+                }
+            }
             item(key = "slot_global") {
                 WallpaperSlotCard(
                     title = "全局壁纸",
@@ -758,12 +782,22 @@ private fun WallpaperRow(
                     color = MaterialTheme.colorScheme.error,
                 )
 
-                bitmap != null -> Image(
-                    bitmap = bitmap!!,
-                    contentDescription = null,
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier.fillMaxSize(),
-                )
+                bitmap != null -> Box(modifier = Modifier.fillMaxSize()) {
+                    Image(
+                        bitmap = bitmap!!,
+                        contentDescription = null,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                    if (com.gfs.iyango.core.domain.WallpaperMediaKind.isVideoPath(path)) {
+                        StatusBadge(
+                            text = "视频",
+                            modifier = Modifier
+                                .align(Alignment.TopEnd)
+                                .padding(8.dp),
+                        )
+                    }
+                }
 
                 else -> Text(
                     text = "未设置",

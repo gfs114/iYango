@@ -158,7 +158,7 @@ fun GlassSurface(
     }
 
     // P1 优化：无壁纸时 L0 仅为纯色主题基底，CONTENT 卡片对纯色做模糊与折射在视觉上与
-    // 「主题基底叠加 tint 蒙层 + 细高光描边」完全等价，直接走轻量 Surface 分支避免列表每帧离屏渲染。
+    // 「主题基底叠加 tint 蒙层 + 细高光描边」完全等价，直接走轻量 Surface 避免逐项离屏开销。
     if (material == GlassMaterial.CONTENT && !hasWallpaper && exportedBackdrop == null) {
         val themeBackground = MaterialTheme.colorScheme.background
         val contentSurfaceColor = when {

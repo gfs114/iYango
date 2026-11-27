@@ -296,6 +296,7 @@ fun IYangoMainApp(
                         onOpenCreditProgress = { openRoute("creditprogress") },
                         onOpenAiAssistant = { openRoute("aiassistant") },
                         onAddCourse = { openRoute("editor?courseId=0") },
+                        onOpenCompare = { openRoute("timetablecompare") },
                         onEditCourse = { courseId -> openRoute("editor?courseId=$courseId") },
                         onCopyCourse = { courseId -> openRoute("editor?courseId=0&copyFromId=$courseId") },
                     )
@@ -311,6 +312,8 @@ fun IYangoMainApp(
                         onOpenSync = { openRoute("schoolsync") },
                         onOpenCourseRaw = { timetableId -> openRoute("courseraw/$timetableId") },
                         onOpenAiImport = { openRoute("aiimport") },
+                        onOpenCompare = { openRoute("timetablecompare") },
+                        onOpenTimetableManage = { openRoute("timetable") },
                     )
                 }
                 2 -> {
@@ -332,10 +335,11 @@ fun IYangoMainApp(
         }
     }
 
-    val wallpaperPageBackground: (@Composable () -> Unit)? = if (wallpaperUi.activeGlobalWallpaperPath != null) {
+    val effectiveWallpaperPath = wallpaperUi.activeGlobalWallpaperPath
+    val wallpaperPageBackground: (@Composable () -> Unit)? = if (effectiveWallpaperPath != null) {
         {
             WallpaperLayer(
-                path = wallpaperUi.activeGlobalWallpaperPath,
+                path = effectiveWallpaperPath,
                 scrim = appPreferences.wallpaperScrim,
                 blur = appPreferences.wallpaperBlur,
                 modifier = Modifier.fillMaxSize(),
@@ -374,13 +378,13 @@ fun IYangoMainApp(
             modifier = Modifier
                 .fillMaxSize()
                 .background(colorScheme.background),
-            hasWallpaper = wallpaperUi.activeGlobalWallpaperPath != null,
-            wallpaperPath = wallpaperUi.activeGlobalWallpaperPath,
+            hasWallpaper = effectiveWallpaperPath != null,
+            wallpaperPath = effectiveWallpaperPath,
             background = {
                 // F10：全局壁纸铺在所有主页面之下（今日/成绩/我的均透明根），
                 // 课表页可用独立背景覆盖。壁纸层注册进 L0，供玻璃表面采样。
                 WallpaperLayer(
-                    path = wallpaperUi.activeGlobalWallpaperPath,
+                    path = effectiveWallpaperPath,
                     scrim = appPreferences.wallpaperScrim,
                     blur = appPreferences.wallpaperBlur,
                     modifier = Modifier.fillMaxSize(),
@@ -506,13 +510,18 @@ internal fun ColumnScope.DockTabContent(label: String, icon: ImageVector, select
     } else {
         MaterialTheme.colorScheme.onSurfaceVariant
     }
-    // 与 LiquidBottomTabs 的明暗判定保持一致：按主题背景亮度判断，深浅色各用黑/白。
+    // 与 LiquidBottomTabs 的明暗判定保持一致：选中项直接使用主题强调色，未选中按背景明暗适配。
     val isLightTheme = MaterialTheme.colorScheme.background.luminance() >= 0.5f
-    val iconTint = if (isLightTheme) Color.Black else Color.White
+    val iconTint = if (selected) {
+        LocalBrand.current.accent
+    } else if (isLightTheme) {
+        Color.Black.copy(alpha = 0.78f)
+    } else {
+        Color.White.copy(alpha = 0.80f)
+    }
     Icon(
         imageVector = icon,
         contentDescription = label,
-        // [图标明暗自适应] 浅色黑、深色白。
         tint = iconTint,
         // [酷安实测对齐] 图标 24dp、文案 12sp（labelMedium），内容行 48dp 内居中。
         modifier = Modifier.size(24.dp),
@@ -521,7 +530,7 @@ internal fun ColumnScope.DockTabContent(label: String, icon: ImageVector, select
         text = label,
         style = MaterialTheme.typography.labelMedium,
         color = contentColor,
-        fontWeight = if (selected) FontWeight.Medium else null,
+        fontWeight = if (selected) FontWeight.SemiBold else null,
     )
 }
 

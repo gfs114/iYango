@@ -63,6 +63,7 @@ fun IYangoActivityHost(
     val appPrefs by themeViewModel.appPreferences.collectAsStateWithLifecycle()
     val customFontPath by themeViewModel.customFontPath.collectAsStateWithLifecycle()
     var solarTick by remember { mutableIntStateOf(0) }
+    val activity = LocalActivity.current
     val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner) {
         var skipInitialStart = lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)
@@ -118,7 +119,6 @@ fun IYangoActivityHost(
         resolveGrayTextColors(appPrefs.grayTextMode, appPrefs.grayTextCustomHex, darkTheme)
     }
     // 状态栏/手势栏图标明暗跟随实际生效的主题（而非系统设置）。
-    val activity = LocalActivity.current
     LaunchedEffect(darkTheme, activity) {
         val window = activity?.window ?: return@LaunchedEffect
         WindowCompat.getInsetsController(window, window.decorView).apply {

@@ -1,5 +1,6 @@
 package com.gfs.iyango.core.domain
 
+import java.util.Locale
 import kotlinx.coroutines.flow.StateFlow
 
 /**
@@ -163,4 +164,60 @@ interface AppUpdatePort {
     fun startDownload(release: AppUpdateRelease)
     fun cancelDownload()
     fun resetDownloadState()
+}
+
+/**
+ * 提取并清洗 GitHub Release 更新说明，仅保留应用内可读的变更日志正文。
+ */
+object AppUpdateReleaseNotesFormatter {
+
+    private val HEADING_REGEX = Regex("^#{1,3}\\s+(.+)$")
+    private val MARKDOWN_LINK_REGEX = Regex("\\[([^\\]]+)]\\([^)]+\\)")
+
+    fun extractChangelog(rawBody: String): String {
+        val trimmed = rawBody.trim()
+        if (trimmed.isEmpty()) return ""
+        val kept = mutableListOf<String>()
+        var skipSection = false
+        for (rawLine in trimmed.lines()) {
+            val line = rawLine.trimEnd()
+            val stripped = line.trim()
+            val headingMatch = HEADING_REGEX.matchEntire(stripped)
+            if (headingMatch != null) {
+                val headingText = headingMatch.groupValues[1].trim()
+                val lower = headingText.lowercase(Locale.ROOT)
+                if (lower.contains("download") || headingText.contains("下载")) {
+                    skipSection = true
+                    continue
+                }
+                skipSection = false
+                if (lower == "更新内容" || lower == "changelog" || lower == "what's changed") {
+                    continue
+                }
+                kept += stripped
+                continue
+            }
+            if (skipSection) continue
+            if (stripped.startsWith("|") && stripped.endsWith("|")) {
+                continue
+            }
+            if (stripped.contains("SHA256SUMS", ignoreCase = true) || stripped.contains("核对安装包")) {
+                continue
+            }
+            if (stripped.startsWith("**Full Changelog**:", ignoreCase = true) ||
+                stripped.startsWith("Full Changelog:", ignoreCase = true)
+            ) {
+                continue
+            }
+            kept += line
+        }
+        return kept
+            .dropWhile { it.isBlank() }
+            .dropLastWhile { it.isBlank() }
+            .joinToString("\n")
+            .trim()
+    }
+
+    fun stripMarkdownLinks(text: String): String =
+        MARKDOWN_LINK_REGEX.replace(text, "$1")
 }

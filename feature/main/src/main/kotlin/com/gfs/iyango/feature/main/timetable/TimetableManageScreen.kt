@@ -3,6 +3,7 @@
 package com.gfs.iyango.feature.main.timetable
 
 import com.gfs.iyango.core.designsystem.component.GlassOverlayHeader
+import com.gfs.iyango.core.designsystem.component.StatusBadge
 import com.gfs.iyango.core.designsystem.liquidglass.GlassMaterial
 import com.gfs.iyango.core.designsystem.liquidglass.GlassSurface
 import com.gfs.iyango.core.designsystem.liquidglass.LiquidAlertDialog
@@ -19,6 +20,8 @@ import com.gfs.iyango.core.designsystem.component.GlassTopBarIconButton
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.calculateStartPadding
 import androidx.compose.foundation.layout.calculateEndPadding
@@ -80,10 +83,13 @@ fun TimetableManageScreen(
     viewModel: TimetableManageViewModel = hiltViewModel(),
 ) {
     val timetables by viewModel.timetables.collectAsStateWithLifecycle()
+    val partnerTimetableId by viewModel.partnerTimetableId.collectAsStateWithLifecycle()
+    val partnerLabel by viewModel.partnerLabel.collectAsStateWithLifecycle()
     val pendingDelete by viewModel.pendingDelete.collectAsStateWithLifecycle()
     val busy by viewModel.busy.collectAsStateWithLifecycle()
     var nameDialog by remember { mutableStateOf<NameDialog?>(null) }
     var rulesTarget by remember { mutableStateOf<Timetable?>(null) }
+    var partnerTarget by remember { mutableStateOf<Timetable?>(null) }
 
     GlassScaffold(
         topBar = {
@@ -137,13 +143,23 @@ fun TimetableManageScreen(
             }
             items(timetables.size) { index ->
                 val timetable = timetables[index]
+                val isPartner = !timetable.isCurrent && timetable.id == partnerTimetableId
                 TimetableCard(
                     timetable = timetable,
+                    isPartner = isPartner,
+                    partnerLabel = partnerLabel,
                     busy = busy,
                     onSetCurrent = { viewModel.setCurrent(timetable.id) },
                     onRename = { nameDialog = NameDialog.Rename(timetable) },
                     onRules = { rulesTarget = timetable },
                     onDuplicate = { viewModel.duplicate(timetable.id) },
+                    onTogglePartner = {
+                        if (isPartner) {
+                            viewModel.clearPartnerTimetable()
+                        } else {
+                            partnerTarget = timetable
+                        }
+                    },
                     onDelete = { viewModel.requestDelete(timetable.id) },
                 )
             }
@@ -206,6 +222,17 @@ fun TimetableManageScreen(
             },
         )
     }
+
+    partnerTarget?.let { target ->
+        PartnerLabelDialog(
+            initialLabel = partnerLabel,
+            onDismiss = { partnerTarget = null },
+            onConfirm = { label ->
+                viewModel.setPartnerTimetable(target.id, label)
+                partnerTarget = null
+            },
+        )
+    }
 }
 
 /** 名称输入弹窗（新建/重命名共用）。 */
@@ -215,14 +242,18 @@ private sealed interface NameDialog {
 }
 
 /** 单张课表卡（§6）。 */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun TimetableCard(
     timetable: Timetable,
+    isPartner: Boolean,
+    partnerLabel: String,
     busy: Boolean,
     onSetCurrent: () -> Unit,
     onRename: () -> Unit,
     onRules: () -> Unit,
     onDuplicate: () -> Unit,
+    onTogglePartner: () -> Unit,
     onDelete: () -> Unit,
 ) {
     val brand = LocalBrand.current
@@ -237,12 +268,18 @@ private fun TimetableCard(
             ),
     ) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
                 Text(
                     text = timetable.name,
                     style = MaterialTheme.typography.titleMedium,
                     modifier = Modifier.weight(1f),
                 )
+                if (isPartner) {
+                    StatusBadge(text = partnerLabel)
+                }
                 if (timetable.isCurrent) {
                     Icon(
                         Icons.Filled.Check,
@@ -260,9 +297,16 @@ private fun TimetableCard(
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
                 if (!timetable.isCurrent) {
                     ActionPill(text = "设为当前", onClick = onSetCurrent)
+                    ActionPill(
+                        text = if (isPartner) "取消对照" else "设为对照",
+                        onClick = onTogglePartner,
+                    )
                 }
                 ActionPill(text = "名称", onClick = onRename)
                 ActionPill(text = "规则", onClick = onRules)
@@ -280,6 +324,34 @@ private fun TimetableCard(
             }
         }
     }
+}
+
+@Composable
+private fun PartnerLabelDialog(
+    initialLabel: String,
+    onDismiss: () -> Unit,
+    onConfirm: (String) -> Unit,
+) {
+    var label by remember { mutableStateOf(initialLabel.ifBlank { "TA" }) }
+    LiquidAlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("对方称呼", style = MaterialTheme.typography.titleLarge) },
+        text = {
+            LiquidOutlinedTextField(
+                value = label,
+                onValueChange = { label = it.take(12) },
+                label = { Text("称呼") },
+                placeholder = { Text("TA") },
+                singleLine = true,
+            )
+        },
+        confirmButton = {
+            TextButton(onClick = { onConfirm(label) }) { Text("确定") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("取消") }
+        },
+    )
 }
 
 /** 操作胶囊（高 36，控件液态玻璃底座）。 */
@@ -491,8 +563,11 @@ private fun TimetableManageLightPreview() {
             ) {
                 TimetableCard(
                     timetable = Timetable(id = 1, name = "我的课表", isCurrent = true),
+                    isPartner = false,
+                    partnerLabel = "TA",
                     busy = false,
                     onSetCurrent = {},
+                    onTogglePartner = {},
                     onRename = {},
                     onRules = {},
                     onDuplicate = {},
@@ -500,8 +575,11 @@ private fun TimetableManageLightPreview() {
                 )
                 TimetableCard(
                     timetable = Timetable(id = 2, name = "辅修课表", isCurrent = false),
+                    isPartner = true,
+                    partnerLabel = "TA",
                     busy = false,
                     onSetCurrent = {},
+                    onTogglePartner = {},
                     onRename = {},
                     onRules = {},
                     onDuplicate = {},
@@ -527,8 +605,11 @@ private fun TimetableManageDarkPreview() {
             ) {
                 TimetableCard(
                     timetable = Timetable(id = 1, name = "我的课表", isCurrent = true),
+                    isPartner = false,
+                    partnerLabel = "TA",
                     busy = false,
                     onSetCurrent = {},
+                    onTogglePartner = {},
                     onRename = {},
                     onRules = {},
                     onDuplicate = {},

@@ -98,10 +98,11 @@ fun IYangoSecondaryPage(
     val onOpenRouteState = rememberUpdatedState(onOpenRoute)
     fun openRoute(next: String) = onOpenRouteState.value(next)
 
-    val wallpaperPageBackground: (@Composable () -> Unit)? = if (wallpaperUi.activeGlobalWallpaperPath != null) {
+    val effectiveWallpaperPath = wallpaperUi.activeGlobalWallpaperPath
+    val wallpaperPageBackground: (@Composable () -> Unit)? = if (effectiveWallpaperPath != null) {
         {
             WallpaperLayer(
-                path = wallpaperUi.activeGlobalWallpaperPath,
+                path = effectiveWallpaperPath,
                 scrim = appPreferences.wallpaperScrim,
                 blur = appPreferences.wallpaperBlur,
                 modifier = Modifier.fillMaxSize(),
@@ -120,7 +121,7 @@ fun IYangoSecondaryPage(
         LocalGlassPageBackground provides wallpaperPageBackground,
         LocalGlassPalette provides glassPalette,
     ) {
-        // 关闭预测性返回时由 Priority=0 BackHandler 接管（子页内部拦截器在后面注册、优先生效）。
+        // 关闭预测性返回时由 Priority=0 BackHandler 消费返回键以屏蔽系统预测缩放预览。
         BackHandler(
             enabled = Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && !wallpaperUi.predictiveBackEnabled,
         ) {
@@ -130,12 +131,12 @@ fun IYangoSecondaryPage(
             modifier = Modifier
                 .fillMaxSize()
                 .background(colorScheme.background),
-            hasWallpaper = wallpaperUi.activeGlobalWallpaperPath != null,
-            wallpaperPath = wallpaperUi.activeGlobalWallpaperPath,
+            hasWallpaper = effectiveWallpaperPath != null,
+            wallpaperPath = effectiveWallpaperPath,
             background = {
                 // 与主壳一致：全局壁纸铺在页面之下并注册进 L0，供玻璃表面采样。
                 WallpaperLayer(
-                    path = wallpaperUi.activeGlobalWallpaperPath,
+                    path = effectiveWallpaperPath,
                     scrim = appPreferences.wallpaperScrim,
                     blur = appPreferences.wallpaperBlur,
                     modifier = Modifier.fillMaxSize(),

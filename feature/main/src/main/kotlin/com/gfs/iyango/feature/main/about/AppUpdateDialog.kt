@@ -15,13 +15,16 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.DialogProperties
 import com.gfs.iyango.core.designsystem.liquidglass.LiquidAlertDialog
 import com.gfs.iyango.core.designsystem.liquidglass.LiquidButton
 import com.gfs.iyango.core.domain.AppUpdateRelease
+import com.gfs.iyango.core.domain.AppUpdateReleaseNotesFormatter
 
 /**
  * 全局应用更新提示弹窗。
@@ -56,24 +59,39 @@ fun AppUpdateDialog(
             )
         },
         text = {
+            val displayNotes = remember(release.releaseNotes) {
+                AppUpdateReleaseNotesFormatter.extractChangelog(release.releaseNotes)
+            }
             Column(
                 modifier = Modifier
                     .heightIn(max = 320.dp)
                     .verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                if (release.publishedAt.isNotBlank()) {
-                    Text(
-                        text = release.publishedAt.take(10),
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-                if (release.releaseNotes.isNotBlank()) {
-                    Text(
-                        text = release.releaseNotes,
-                        style = MaterialTheme.typography.bodyMedium,
-                    )
+                if (displayNotes.isNotBlank()) {
+                    val noteLines = remember(displayNotes) { displayNotes.lines() }
+                    noteLines.forEach { raw ->
+                        val cleaned = AppUpdateReleaseNotesFormatter.stripMarkdownLinks(raw.trim())
+                        if (cleaned.isEmpty()) return@forEach
+                        when {
+                            cleaned.startsWith("### ") || cleaned.startsWith("## ") || cleaned.startsWith("# ") -> {
+                                val heading = cleaned.trimStart('#').trim()
+                                if (heading.isNotEmpty()) {
+                                    Text(
+                                        text = heading,
+                                        style = MaterialTheme.typography.titleSmall,
+                                        fontWeight = FontWeight.SemiBold,
+                                    )
+                                }
+                            }
+                            else -> {
+                                Text(
+                                    text = cleaned,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                )
+                            }
+                        }
+                    }
                 }
                 if (actionUrl.isBlank() && onOpenUpdatePage == null) {
                     Text(

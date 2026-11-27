@@ -14,6 +14,14 @@ data class PreparedWallpaper(
     val averageLuminance: Float,
 )
 
+/** 从 Wallpaper Engine 安装包或本地视频导入完成的媒体结果。 */
+data class ImportedWallpaperMedia(
+    val relativePath: String,
+    val isVideo: Boolean,
+    val averageLuminance: Float,
+    val isScenePreview: Boolean = false,
+)
+
 /**
  * 壁纸文件存储端口（F10）。
  *
@@ -63,6 +71,9 @@ interface WallpaperStore {
 
     /** 从已保存的壁纸图片中提取主色调强调色 `#RRGGBB`；不支持或失败返回 null。 */
     suspend fun extractAccentHex(relativePath: String): String? = null
+
+    /** 直接导入 Wallpaper Engine `.mpkg` / `.pkg` / `.zip` 包或 `.mp4` / `.webm` 视频到指定槽位。 */
+    suspend fun importVideoOrPackage(sourceUri: String, slot: String): ImportedWallpaperMedia? = null
 
     companion object {
         /** 全局壁纸槽位。 */

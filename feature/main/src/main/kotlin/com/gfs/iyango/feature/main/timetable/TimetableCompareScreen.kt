@@ -82,6 +82,7 @@ fun TimetableCompareScreen(
     viewModel: TimetableCompareViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    val partnerTimetableId by viewModel.partnerTimetableId.collectAsStateWithLifecycle()
     var viewMode by remember { mutableStateOf(CompareViewMode.GRID) }
     var inspectedCell by remember { mutableStateOf<ComparisonSlotCell?>(null) }
 
@@ -147,22 +148,48 @@ fun TimetableCompareScreen(
 
                     item {
                         SectionCard(title = "参与对比课表 (${state.selectedIds.size})") {
-                            FlowRow(
-                                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                verticalArrangement = Arrangement.spacedBy(8.dp),
-                            ) {
-                                state.timetables.forEach { table ->
-                                    LiquidFilterChip(
-                                        selected = table.id in state.selectedIds,
-                                        onClick = { viewModel.toggleTimetable(table.id) },
-                                        label = {
-                                            Text(
-                                                table.name.ifBlank { "课表 ${table.id}" },
-                                                maxLines = 1,
-                                                overflow = TextOverflow.Ellipsis,
-                                            )
+                            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                                FlowRow(
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                                ) {
+                                    state.timetables.forEach { table ->
+                                        LiquidFilterChip(
+                                            selected = table.id in state.selectedIds,
+                                            onClick = { viewModel.toggleTimetable(table.id) },
+                                            label = {
+                                                Text(
+                                                    table.name.ifBlank { "课表 ${table.id}" },
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis,
+                                                )
+                                            },
+                                        )
+                                    }
+                                }
+                                val currentTable = state.timetables.firstOrNull { it.isCurrent }
+                                val partnerCandidate = if (state.selectedIds.size == 2 && currentTable != null && currentTable.id in state.selectedIds) {
+                                    state.timetables.firstOrNull { it.id in state.selectedIds && it.id != currentTable.id }
+                                } else {
+                                    null
+                                }
+                                if (partnerCandidate != null) {
+                                    val active = partnerCandidate.id == partnerTimetableId
+                                    LiquidOutlinedButton(
+                                        onClick = {
+                                            if (active) {
+                                                viewModel.clearPartnerTimetable()
+                                            } else {
+                                                viewModel.setAsPartnerTimetable(
+                                                    partnerCandidate.id,
+                                                    partnerCandidate.name.ifBlank { "TA" },
+                                                )
+                                            }
                                         },
-                                    )
+                                        modifier = Modifier.fillMaxWidth(),
+                                    ) {
+                                        Text(if (active) "取消双人对照" else "设为双人对照")
+                                    }
                                 }
                             }
                         }

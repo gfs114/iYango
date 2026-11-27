@@ -342,6 +342,10 @@ data class AppPreferences(
     val bingLastAutoUpdateDate: String = "",
     /** 常用置顶教学楼列表（最多 8 项）。 */
     val pinnedClassroomBuildings: List<PinnedClassroomBuilding> = emptyList(),
+    /** 双人课表对照目标课表 id（0 = 未开启）。 */
+    val partnerTimetableId: Long = 0L,
+    /** 双人课表对照称呼（默认 "TA"）。 */
+    val partnerLabel: String = "TA",
 ) {
     fun sanitized(): AppPreferences = copy(
         defaultStartTab = defaultStartTab.coerceIn(0, 3),
@@ -374,6 +378,8 @@ data class AppPreferences(
             .filter { it.campusCode.isNotEmpty() && it.buildingCode.isNotEmpty() }
             .distinctBy { it.key }
             .take(MAX_PINNED_BUILDINGS),
+        partnerTimetableId = partnerTimetableId.coerceAtLeast(0L),
+        partnerLabel = partnerLabel.trim().take(12).ifEmpty { "TA" },
     )
 
     companion object {

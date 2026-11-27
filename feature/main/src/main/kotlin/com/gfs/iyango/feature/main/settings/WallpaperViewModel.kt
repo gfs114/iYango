@@ -345,6 +345,43 @@ class WallpaperViewModel @Inject constructor(
         updatePreferences { it.copy(wallpaperDynamicColor = enabled) }
     }
 
+    fun importWallpaperEngineOrVideo(sourceUri: String, slot: String, dark: Boolean, darkTheme: Boolean = dark) {
+        if (_busy.value) return
+        _busy.value = true
+        viewModelScope.launch {
+            val fileSlot = slot + if (dark) "_dark" else ""
+            val oldPath = currentPath(slot, dark)
+            val imported = wallpaperStore.importVideoOrPackage(sourceUri, fileSlot)
+            if (imported == null) {
+                _message.value = "无法解析该文件，请选择 .mpkg 或 MP4/WebM 视频"
+            } else {
+                val scrim = com.gfs.iyango.core.domain.WallpaperTone.recommendedScrim(
+                    imported.averageLuminance,
+                    darkTheme,
+                )
+                persistPreferences { prefs ->
+                    val updated = withPath(prefs, slot, dark, imported.relativePath).copy(
+                        wallpaperScrim = scrim.coerceIn(0f, 0.8f),
+                    )
+                    if (slot == WallpaperStore.SLOT_GLOBAL) {
+                        updated.copy(wallpaperSwitchMode = WallpaperSwitchMode.FOLLOW_THEME)
+                    } else {
+                        updated
+                    }
+                }
+                if (oldPath.isNotBlank() && oldPath != imported.relativePath) {
+                    wallpaperStore.delete(oldPath)
+                }
+                _message.value = when {
+                    imported.isVideo -> "已导入动态视频壁纸"
+                    imported.isScenePreview -> "已提取 3D 场景预览图"
+                    else -> "已导入壁纸"
+                }
+            }
+            _busy.value = false
+        }
+    }
+
     suspend fun extractAccentFromPath(relativePath: String): String? =
         wallpaperStore.extractAccentHex(relativePath)
 

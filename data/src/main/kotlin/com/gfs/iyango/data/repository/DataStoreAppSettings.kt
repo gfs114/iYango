@@ -406,6 +406,8 @@ class DataStoreAppSettings internal constructor(
         val bingAutoUpdateTarget: String = BingWallpaperTarget.GLOBAL_LIGHT.name,
         val bingLastAutoUpdateDate: String = "",
         val pinnedClassroomBuildings: List<PinnedBuildingDto> = emptyList(),
+        val partnerTimetableId: Long = 0L,
+        val partnerLabel: String = "TA",
     ) {
         fun toModel(): AppPreferences = AppPreferences(
             version = version,
@@ -448,6 +450,8 @@ class DataStoreAppSettings internal constructor(
                 .getOrDefault(BingWallpaperTarget.GLOBAL_LIGHT),
             bingLastAutoUpdateDate = bingLastAutoUpdateDate,
             pinnedClassroomBuildings = pinnedClassroomBuildings.map { it.toModel() },
+            partnerTimetableId = partnerTimetableId,
+            partnerLabel = partnerLabel,
         ).sanitized()
     }
 }
@@ -564,4 +568,6 @@ private fun AppPreferences.toDto(): DataStoreAppSettings.AppPreferencesDto =
         pinnedClassroomBuildings = pinnedClassroomBuildings.map {
             DataStoreAppSettings.PinnedBuildingDto.fromModel(it)
         },
+        partnerTimetableId = partnerTimetableId,
+        partnerLabel = partnerLabel,
     )

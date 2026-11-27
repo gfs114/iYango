@@ -7,6 +7,7 @@ package com.gfs.iyango.feature.main.liquidglass
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.EaseOut
 import androidx.compose.animation.core.spring
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Row
@@ -56,7 +57,6 @@ import com.gfs.iyango.core.domain.DockGlassSettings
 import com.kyant.backdrop.Backdrop
 import com.kyant.backdrop.BackdropEffectScope
 import com.kyant.backdrop.backdrops.layerBackdrop
-import com.kyant.backdrop.backdrops.rememberCombinedBackdrop
 import com.kyant.backdrop.backdrops.rememberLayerBackdrop
 import com.kyant.backdrop.drawBackdrop
 import com.kyant.backdrop.effects.blur
@@ -207,8 +207,8 @@ fun LiquidBottomTabs(
     }
     // [酷安对齐] 暗色玻璃必须是“比背景更暗”的黑玻璃，而不是比背景更亮的 #121212 灰板。
     val containerColor =
-        if (isLightTheme) Color(0xFFFAFAFA).copy(containerAlpha)
-        else Color.Black.copy(containerAlpha)
+        if (isLightTheme) Color(0xFFFDFDFD).copy(containerAlpha)
+        else Color(0xFF141416).copy(containerAlpha)
     /** 蒙层是否完全关闭（0）。 */
     val surfaceDisabled = containerAlpha <= 0.004f
 
@@ -402,7 +402,7 @@ fun LiquidBottomTabs(
             LocalLiquidBottomTabEnabled provides interactive,
         ) {
             Box((if (interactive) longPressDragModifier else Modifier).testTag("liquid-bottom-tabs"), contentAlignment = Alignment.CenterStart) {
-                Row(
+                Box(
                     Modifier
                         .graphicsLayer {
                             translationX = panelOffset
@@ -440,9 +440,38 @@ fun LiquidBottomTabs(
                         .height(DockGeometry.BAR_HEIGHT_DP.dp)
                         .fillMaxWidth()
                         .padding(4f.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    content = content
-                )
+                    contentAlignment = Alignment.CenterStart,
+                ) {
+                    val restingAlpha = if (glassTier == 0) {
+                        DockGlass.INDICATOR_SURFACE_ALPHA_LEGACY
+                    } else {
+                        glass.indicatorSurfaceAlpha
+                    }
+                    val restingPillColor = if (isLightTheme) {
+                        Color.Black.copy(restingAlpha)
+                    } else {
+                        Color.White.copy(restingAlpha)
+                    }
+                    Box(
+                        Modifier
+                            .graphicsLayer {
+                                translationX =
+                                    if (isLtr) dampedDragAnimation.value * tabWidth
+                                    else size.width - (dampedDragAnimation.value + 1f) * tabWidth
+                                alpha = (1f - dampedDragAnimation.pressProgress).coerceIn(0f, 1f)
+                            }
+                            .height(DockGeometry.CONTENT_HEIGHT_DP.dp)
+                            .fillMaxWidth(1f / tabsCount)
+                            .background(restingPillColor, Capsule())
+                    )
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .height(DockGeometry.CONTENT_HEIGHT_DP.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        content = content,
+                    )
+                }
 
                 CompositionLocalProvider(
                     LocalLiquidBottomTabScale provides {
@@ -507,7 +536,7 @@ fun LiquidBottomTabs(
                         .then(if (interactive) interactiveHighlight.gestureModifier else Modifier)
                         .then(if (interactive) dampedDragAnimation.modifier else Modifier)
                         .drawBackdrop(
-                            backdrop = rememberCombinedBackdrop(backdrop, tabsBackdrop),
+                            backdrop = tabsBackdrop,
                             shape = { Capsule() },
                             effects = {
                                 val progress = dampedDragAnimation.pressProgress
@@ -555,6 +584,7 @@ fun LiquidBottomTabs(
                                 }
                             },
                             layerBlock = {
+                                alpha = dampedDragAnimation.pressProgress.coerceIn(0f, 1f)
                                 scaleX = dampedDragAnimation.scaleX
                                 scaleY = dampedDragAnimation.scaleY
                                 val velocity = dampedDragAnimation.velocity / 10f
@@ -563,22 +593,13 @@ fun LiquidBottomTabs(
                             },
                             onDrawSurface = {
                                 val progress = dampedDragAnimation.pressProgress
-                                // 常态底色 0.02；tier 0 无折射时加深到 0.12。
-                                val baseAlpha = if (glassTier == 0) {
-                                    DockGlass.INDICATOR_SURFACE_ALPHA_LEGACY
-                                } else {
-                                    glass.indicatorSurfaceAlpha
-                                }
-                                drawRect(
-                                    if (isLightTheme) Color.Black.copy(baseAlpha)
-                                    else Color.White.copy(baseAlpha),
-                                    alpha = 1f - progress
-                                )
-                                drawRect(
-                                    Color.Black.copy(
-                                        alpha = glass.indicatorSurfacePressedAlpha * progress
+                                if (progress > 0.001f) {
+                                    drawRect(
+                                        Color.Black.copy(
+                                            alpha = glass.indicatorSurfacePressedAlpha * progress
+                                        )
                                     )
-                                )
+                                }
                             }
                         )
                         .height(DockGeometry.CONTENT_HEIGHT_DP.dp)
@@ -606,7 +627,7 @@ private fun BackdropEffectScope.applyDockEffects(
     if (hasLens) {
         val rawHeight = lensWidthDp.dp.toPx()
         val rawAmount = lensHeightDp.dp.toPx()
-        val maxLensHeight = (size.minDimension * 0.45f).coerceAtLeast(0f)
+        val maxLensHeight = (size.minDimension * 0.25f).coerceAtLeast(0f)
         val scale = if (rawHeight > maxLensHeight && rawHeight > 0f) {
             maxLensHeight / rawHeight
         } else {

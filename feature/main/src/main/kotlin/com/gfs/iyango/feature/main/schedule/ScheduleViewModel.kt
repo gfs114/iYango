@@ -10,6 +10,7 @@ import com.gfs.iyango.core.domain.ApplyTemporaryDay
 import com.gfs.iyango.core.domain.AutoSilentCoordinatorPort
 import com.gfs.iyango.core.domain.CancelOccurrence
 import com.gfs.iyango.core.domain.CourseRules
+import com.gfs.iyango.core.domain.EffectiveScheduleDay
 import com.gfs.iyango.core.domain.EffectiveSchedulePort
 import com.gfs.iyango.core.domain.HolidayMakeupCodec
 import com.gfs.iyango.core.domain.HolidayRepositoryPort
@@ -20,6 +21,9 @@ import com.gfs.iyango.core.domain.RefreshCoordinatorPort
 import com.gfs.iyango.core.domain.RefreshOutcome
 import com.gfs.iyango.core.domain.RefreshResource
 import com.gfs.iyango.core.domain.ScheduleDataPort
+import com.gfs.iyango.core.domain.TimetableComparisonCalculator
+import com.gfs.iyango.core.domain.TimetableComparisonResult
+import com.gfs.iyango.core.domain.TimetableComparisonSource
 import com.gfs.iyango.core.domain.TimetableRepositoryPort
 import com.gfs.iyango.core.domain.WallpaperStore
 import com.gfs.iyango.core.model.Course
@@ -68,6 +72,20 @@ enum class CourseDeleteScope {
     /** 删除整门课的所有安排：删除同名同教师的全部课程（含调整记录）。 */
     DELETE_WHOLE_COURSE,
 }
+
+/** 课表主视图范围。 */
+enum class ScheduleViewScope {
+    MINE,
+    PARTNER,
+    DUAL,
+}
+
+/** 已关联对照对象的课表摘要。 */
+data class PartnerScheduleHeaderInfo(
+    val timetableId: Long,
+    val timetableName: String,
+    val label: String,
+)
 
 /**
  * 课表页 ViewModel（ui-baseline §3 周网格）。
@@ -481,6 +499,147 @@ class ScheduleViewModel constructor(
             else -> result.projection.render(browse.week, browse.revision, browse.navigationVersion, now)
         }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), ScheduleUiState.FirstLoading)
+
+    private val viewScopeState = MutableStateFlow(ScheduleViewScope.MINE)
+    val viewScope: StateFlow<ScheduleViewScope> = viewScopeState
+
+    val partnerInfo: StateFlow<PartnerScheduleHeaderInfo?> = combine(
+        appSettings.appPreferences.map { it.partnerTimetableId to it.partnerLabel }.distinctUntilChanged(),
+        timetableRepository.observeAll(),
+        timetableRepository.observeCurrent(),
+    ) { (partnerId, label), tables, current ->
+        val partner = tables.firstOrNull { it.id == partnerId && it.id != current?.id } ?: return@combine null
+        PartnerScheduleHeaderInfo(
+            timetableId = partner.id,
+            timetableName = partner.name,
+            label = label.trim().ifEmpty { "TA" },
+        )
+    }.onEach { info ->
+        if (info == null && viewScopeState.value != ScheduleViewScope.MINE) {
+            viewScopeState.value = ScheduleViewScope.MINE
+        }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
+    fun setViewScope(scope: ScheduleViewScope) {
+        if (scope != ScheduleViewScope.MINE && partnerInfo.value == null) {
+            viewScopeState.value = ScheduleViewScope.MINE
+            return
+        }
+        viewScopeState.value = scope
+    }
+
+    private data class PartnerWeekBundle(
+        val partnerWeek: WeekScheduleData,
+        val comparison: TimetableComparisonResult,
+    )
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    private val partnerWeekBundle: StateFlow<PartnerWeekBundle?> = combine(
+        partnerInfo,
+        timetableRepository.observeAll(),
+        viewScopeState,
+        currentState.map { (it as? ScheduleUiState.Ready)?.data?.copy(now = LocalDateTime.MIN) }.distinctUntilChanged(),
+    ) { info, tables, scope, myData ->
+        if (info == null || scope == ScheduleViewScope.MINE || myData == null) {
+            null
+        } else {
+            val partnerTable = tables.firstOrNull { it.id == info.timetableId } ?: return@combine null
+            Triple(info, partnerTable, myData)
+        }
+    }.distinctUntilChanged().flatMapLatest { triple ->
+        if (triple == null) {
+            flowOf<PartnerWeekBundle?>(null)
+        } else {
+            val (info, partnerTable, myData) = triple
+            combine(
+                scheduleData.observeSemester(partnerTable.id),
+                scheduleData.observeTimeSlots(partnerTable.id),
+                scheduleData.observeCourses(partnerTable.id),
+                adjustmentRepository.observeAdjustments(partnerTable.id),
+                adjustmentRepository.observeTemporaryDays(partnerTable.id),
+            ) { semester, slots, courses, adjustments, temporaryDays ->
+                TimetableSnapshot(semester, slots, courses, adjustments, temporaryDays)
+            }.map<TimetableSnapshot, PartnerWeekBundle?> { snapshot ->
+                val weekStart = myData.weekStart
+                val weekEnd = weekStart.plusDays(6)
+                val partnerOccurrences = runCatching {
+                    effectiveSchedule.resolveTimetableRange(partnerTable.id, weekStart..weekEnd)
+                }.getOrDefault(emptyList())
+                val days = (0L..6L).map { offset ->
+                    val date = weekStart.plusDays(offset)
+                    EffectiveScheduleDay(
+                        date = date,
+                        timetable = partnerTable,
+                        semester = snapshot.semester,
+                        occurrences = partnerOccurrences.filter { it.date == date },
+                        timeSlots = snapshot.slots,
+                        baseCourses = snapshot.courses,
+                    )
+                }
+                val alignedSemester = Semester(
+                    id = snapshot.semester?.id ?: 0L,
+                    timetableId = partnerTable.id,
+                    name = snapshot.semester?.name ?: myData.semester?.name.orEmpty(),
+                    startDate = weekStart.minusDays((myData.displayedWeek.coerceAtLeast(1) - 1) * 7L),
+                    totalWeeks = myData.totalWeeks.coerceAtLeast(1),
+                )
+                val partnerWeek = buildScheduleWeekData(
+                    timetable = partnerTable,
+                    semester = alignedSemester,
+                    slots = snapshot.slots,
+                    courses = snapshot.courses,
+                    timeRailRows = scheduleData::timeRailRows,
+                    direction = myData.flipDirection,
+                    now = myData.now,
+                    days = days,
+                    selectedWeek = myData.displayedWeek,
+                    weekDayCounts = emptyList(),
+                    weekSlotMasks = emptyList(),
+                ).copy(
+                    readOnly = true,
+                    timetableName = info.label,
+                    currentWeek = myData.currentWeek,
+                    today = myData.today,
+                    holidays = myData.holidays,
+                )
+                val myWeekOccurrences = myData.effectiveDays
+                    .filter { it.date in weekStart..weekEnd }
+                    .flatMap { it.occurrences }
+                val comparison = TimetableComparisonCalculator.compare(
+                    sources = listOf(
+                        TimetableComparisonSource(
+                            timetable = Timetable(id = myData.timetableId, name = "我"),
+                            semester = myData.semester,
+                            timeSlots = myData.timeSlots,
+                            occurrences = myWeekOccurrences,
+                        ),
+                        TimetableComparisonSource(
+                            timetable = partnerTable.copy(name = info.label),
+                            semester = snapshot.semester,
+                            timeSlots = snapshot.slots,
+                            occurrences = partnerOccurrences,
+                        ),
+                    ),
+                    weekStartDate = weekStart,
+                    defaultMaxSection = maxOf(myData.sectionCount, partnerWeek.sectionCount, 11),
+                )
+                PartnerWeekBundle(partnerWeek = partnerWeek, comparison = comparison)
+            }.catch { error ->
+                if (error is CancellationException) throw error
+                emit(null)
+            }
+        }
+    }.combine(nowTick) { bundle, now ->
+        bundle?.copy(partnerWeek = bundle.partnerWeek.copy(now = now))
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
+    val partnerWeekData: StateFlow<WeekScheduleData?> = partnerWeekBundle
+        .map { it?.partnerWeek }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
+    val dualComparison: StateFlow<TimetableComparisonResult?> = partnerWeekBundle
+        .map { it?.comparison }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
     @OptIn(ExperimentalCoroutinesApi::class)
     private fun derive(

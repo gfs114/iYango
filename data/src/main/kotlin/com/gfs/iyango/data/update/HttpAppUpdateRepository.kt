@@ -449,7 +449,7 @@ class HttpAppUpdateRepository internal constructor(
         const val KEY_CUSTOM_ENDPOINT = "custom_endpoint_override"
         const val KEY_DOWNLOAD_MIRROR = "download_mirror"
         const val KEY_AUTO_CHECK_ENABLED = "auto_check_enabled"
-        const val FALLBACK_VERSION_NAME = "1.1"
+        const val FALLBACK_VERSION_NAME = "1.2"
         const val LAUNCH_GUARD_MILLIS = 10_000L
         const val MAX_BODY_BYTES = 512 * 1024
         const val PROGRESS_THROTTLE_NANOS = 120_000_000L

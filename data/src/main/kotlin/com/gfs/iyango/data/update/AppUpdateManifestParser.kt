@@ -1,6 +1,7 @@
 package com.gfs.iyango.data.update
 
 import com.gfs.iyango.core.domain.AppUpdateRelease
+import com.gfs.iyango.core.domain.AppUpdateReleaseNotesFormatter
 import java.net.URI
 import java.util.Locale
 import kotlinx.serialization.json.Json
@@ -115,45 +116,8 @@ internal object AppUpdateManifestParser {
         )
     }
 
-    internal fun extractInAppReleaseNotes(rawBody: String): String {
-        val trimmed = rawBody.trim()
-        if (trimmed.isEmpty()) return ""
-        val headingRegex = Regex("^#{1,3}\\s+(.+)$")
-        val kept = mutableListOf<String>()
-        var skipSection = false
-        for (rawLine in trimmed.lines()) {
-            val line = rawLine.trimEnd()
-            val stripped = line.trim()
-            val headingMatch = headingRegex.matchEntire(stripped)
-            if (headingMatch != null) {
-                val headingText = headingMatch.groupValues[1].trim()
-                val lower = headingText.lowercase(Locale.ROOT)
-                if (lower.contains("download") || headingText.contains("下载")) {
-                    skipSection = true
-                    continue
-                }
-                skipSection = false
-                if (lower == "更新内容" || lower == "changelog") {
-                    continue
-                }
-                kept += stripped
-                continue
-            }
-            if (skipSection) continue
-            if (stripped.startsWith("**Full Changelog**:", ignoreCase = true) ||
-                stripped.startsWith("Full Changelog:", ignoreCase = true)
-            ) {
-                continue
-            }
-            kept += line
-        }
-        val normalized = kept
-            .dropWhile { it.isBlank() }
-            .dropLastWhile { it.isBlank() }
-            .joinToString("\n")
-            .trim()
-        return normalized.ifEmpty { trimmed }
-    }
+    internal fun extractInAppReleaseNotes(rawBody: String): String =
+        AppUpdateReleaseNotesFormatter.extractChangelog(rawBody)
 
     internal fun isSafeExternalUrl(raw: String): Boolean {
         val trimmed = raw.trim()

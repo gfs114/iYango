@@ -2,6 +2,7 @@ package com.gfs.iyango.feature.main.timetable
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.gfs.iyango.core.domain.AppSettingsPort
 import com.gfs.iyango.core.domain.CourseRules
 import com.gfs.iyango.core.domain.EffectiveSchedulePort
 import com.gfs.iyango.core.domain.ScheduleDataPort
@@ -17,9 +18,13 @@ import java.time.LocalDate
 import java.time.temporal.TemporalAdjusters
 import javax.inject.Inject
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
@@ -37,12 +42,31 @@ data class TimetableCompareUiState(
  * 多课表「合表找空」ViewModel。
  */
 @HiltViewModel
-class TimetableCompareViewModel @Inject constructor(
+class TimetableCompareViewModel constructor(
     private val timetableRepository: TimetableRepositoryPort,
     private val effectiveSchedule: EffectiveSchedulePort,
     private val scheduleData: ScheduleDataPort,
     private val clock: Clock = Clock.systemDefaultZone(),
+    private val appSettings: AppSettingsPort? = null,
 ) : ViewModel() {
+
+    @Inject
+    constructor(
+        timetableRepository: TimetableRepositoryPort,
+        effectiveSchedule: EffectiveSchedulePort,
+        scheduleData: ScheduleDataPort,
+        appSettings: AppSettingsPort,
+    ) : this(
+        timetableRepository = timetableRepository,
+        effectiveSchedule = effectiveSchedule,
+        scheduleData = scheduleData,
+        clock = Clock.systemDefaultZone(),
+        appSettings = appSettings,
+    )
+
+    val partnerTimetableId: StateFlow<Long> = (
+        appSettings?.appPreferences?.map { it.partnerTimetableId } ?: flowOf(0L)
+        ).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0L)
 
     private val currentMonday: LocalDate =
         LocalDate.now(clock).with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY))
@@ -99,6 +123,25 @@ class TimetableCompareViewModel @Inject constructor(
 
     fun setMinConsecutiveTwo(enabled: Boolean) {
         _state.update { it.copy(minConsecutiveTwo = enabled) }
+    }
+
+    fun setAsPartnerTimetable(timetableId: Long, label: String = "TA") {
+        val settings = appSettings ?: return
+        val clean = label.trim().take(12).ifEmpty { "TA" }
+        viewModelScope.launch {
+            runCatching {
+                settings.transformAppPreferences {
+                    it.copy(partnerTimetableId = timetableId, partnerLabel = clean).sanitized()
+                }
+            }
+        }
+    }
+
+    fun clearPartnerTimetable() {
+        val settings = appSettings ?: return
+        viewModelScope.launch {
+            runCatching { settings.transformAppPreferences { it.copy(partnerTimetableId = 0L) } }
+        }
     }
 
     private suspend fun recompute() {

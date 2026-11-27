@@ -2,18 +2,26 @@
 
 package com.gfs.iyango.feature.main.schedule
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
@@ -39,6 +47,7 @@ import androidx.compose.runtime.Stable
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
@@ -51,6 +60,9 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -66,6 +78,9 @@ import com.gfs.iyango.core.designsystem.component.GlassTopBarIconButton
 import com.gfs.iyango.core.designsystem.component.GlassOverlayHeader
 import com.gfs.iyango.core.designsystem.component.RefreshNoticeCapsule
 import com.gfs.iyango.core.designsystem.liquidglass.GlassBackdropHost
+import com.gfs.iyango.core.designsystem.liquidglass.GlassMaterial
+import com.gfs.iyango.core.designsystem.liquidglass.GlassSurface
+import com.gfs.iyango.core.designsystem.liquidglass.LiquidAlertDialog
 import com.gfs.iyango.core.designsystem.liquidglass.LiquidButton
 import com.gfs.iyango.core.designsystem.liquidglass.LiquidDropdownMenu
 import com.gfs.iyango.core.designsystem.liquidglass.LiquidFilterChip
@@ -75,11 +90,15 @@ import com.gfs.iyango.core.designsystem.liquidglass.LocalGlassWallpaperPath
 import com.gfs.iyango.core.designsystem.component.ErrorState
 import com.gfs.iyango.core.designsystem.component.LoadingState
 import com.gfs.iyango.core.designsystem.theme.IYangoThemePreview
+import com.gfs.iyango.core.designsystem.theme.LocalBrand
+import com.gfs.iyango.core.domain.ComparisonSlotCell
 import com.gfs.iyango.core.domain.CourseOccurrence
 import com.gfs.iyango.core.domain.TimeRailRow
+import com.gfs.iyango.core.domain.TimetableComparisonResult
 import com.gfs.iyango.core.model.Course
 import com.gfs.iyango.core.model.DayLabels
 import com.gfs.iyango.core.model.ScheduleDisplaySettings
+import com.gfs.iyango.core.model.ScheduleViewMode
 import com.gfs.iyango.core.model.Semester
 import com.gfs.iyango.core.model.TemporaryDay
 import com.gfs.iyango.core.model.TimeSlot
@@ -110,6 +129,8 @@ fun ScheduleScreen(
     onOpenSync: () -> Unit = {},
     onOpenCourseRaw: (Long) -> Unit = {},
     onOpenAiImport: () -> Unit = {},
+    onOpenCompare: () -> Unit = {},
+    onOpenTimetableManage: () -> Unit = {},
     viewModel: ScheduleViewModel = hiltViewModel(),
 ) {
     val nativeState by viewModel.currentTimetableState.collectAsStateWithLifecycle()
@@ -123,6 +144,10 @@ fun ScheduleScreen(
     val displaySettings by viewModel.displaySettings.collectAsStateWithLifecycle(minActiveState = androidx.lifecycle.Lifecycle.State.CREATED)
     val wallpaper by viewModel.wallpaper.collectAsStateWithLifecycle(minActiveState = androidx.lifecycle.Lifecycle.State.CREATED)
     val autoSilentExemptKeys by viewModel.autoSilentExemptKeys.collectAsStateWithLifecycle(minActiveState = androidx.lifecycle.Lifecycle.State.CREATED)
+    val viewScope by viewModel.viewScope.collectAsStateWithLifecycle(minActiveState = androidx.lifecycle.Lifecycle.State.CREATED)
+    val partnerInfo by viewModel.partnerInfo.collectAsStateWithLifecycle(minActiveState = androidx.lifecycle.Lifecycle.State.CREATED)
+    val partnerWeekData by viewModel.partnerWeekData.collectAsStateWithLifecycle(minActiveState = androidx.lifecycle.Lifecycle.State.CREATED)
+    val dualComparison by viewModel.dualComparison.collectAsStateWithLifecycle(minActiveState = androidx.lifecycle.Lifecycle.State.CREATED)
     val message by viewModel.message.collectAsStateWithLifecycle(minActiveState = androidx.lifecycle.Lifecycle.State.CREATED)
     val pullMessage by viewModel.pullMessage.collectAsStateWithLifecycle(minActiveState = androidx.lifecycle.Lifecycle.State.CREATED)
 
@@ -222,6 +247,13 @@ fun ScheduleScreen(
         onConfirmMove = viewModel::confirmDrag,
         autoSilentExemptKeys = autoSilentExemptKeys,
         onQuickToggleAutoSilent = viewModel::toggleCourseAutoSilentExempt,
+        viewScope = viewScope,
+        onSelectViewScope = viewModel::setViewScope,
+        partnerInfo = partnerInfo,
+        partnerWeekData = partnerWeekData,
+        dualComparison = dualComparison,
+        onOpenCompare = onOpenCompare,
+        onOpenTimetableManage = onOpenTimetableManage,
     )
 }
 
@@ -277,6 +309,13 @@ fun ScheduleContent(
     onConfirmMove: suspend (ScheduleDropCandidate) -> String? = { "调整不可用" },
     autoSilentExemptKeys: Set<String> = emptySet(),
     onQuickToggleAutoSilent: (Course) -> Unit = {},
+    viewScope: ScheduleViewScope = ScheduleViewScope.MINE,
+    onSelectViewScope: (ScheduleViewScope) -> Unit = {},
+    partnerInfo: PartnerScheduleHeaderInfo? = null,
+    partnerWeekData: WeekScheduleData? = null,
+    dualComparison: TimetableComparisonResult? = null,
+    onOpenCompare: () -> Unit = {},
+    onOpenTimetableManage: () -> Unit = {},
 ) {
     val overlayState = remember { ScheduleOverlayState() }
     val ready = state as? ScheduleUiState.Ready
@@ -332,7 +371,16 @@ fun ScheduleContent(
     }
     // P3 优化：当存在父级 GlassBackdropHost 且课表有效壁纸与全局壁纸一致（含均无壁纸）时，
     // 直接复用根级 L0，避免重复创建全屏 layerBackdrop 及重复绘制/模糊同一张壁纸。
+    val hasAnyWallpaper = activeWallpaperPath != null
     val needsDedicatedBackdropHost = parentBackdrop == null || activeWallpaperPath != parentWallpaperPath
+    val showScopeSwitch = partnerInfo != null && termBrowsing.selected == null && state is ScheduleUiState.Ready
+    val effectiveScope = if (showScopeSwitch) viewScope else ScheduleViewScope.MINE
+    var inspectedDualCell by remember { mutableStateOf<ComparisonSlotCell?>(null) }
+    LaunchedEffect(active, effectiveScope) {
+        if (!active || effectiveScope != ScheduleViewScope.DUAL) {
+            inspectedDualCell = null
+        }
+    }
     val scaffoldContent: @Composable () -> Unit = {
         GlassScaffold(
             modifier = Modifier.fillMaxSize().nestedScroll(refreshBlocker),
@@ -342,6 +390,7 @@ fun ScheduleContent(
             topBar = { ScheduleHeader(
                 state = state,
                 browsing = termBrowsing.selected != null,
+                forceReadOnly = effectiveScope != ScheduleViewScope.MINE,
                 navigationEnabled = active && !interactionLocked,
                 onPreviousWeek = onPreviousWeek,
                 onNextWeek = onNextWeek,
@@ -355,6 +404,7 @@ fun ScheduleContent(
                 onRestoreWeek = onRestoreWeek,
                 onOpenTemporaryDay = onOpenTemporaryDayCallback,
                 onOpenAiImport = onOpenAiImport,
+                onOpenCompare = onOpenCompare,
             ) },
             overlay = { innerPadding ->
                 RefreshNoticeCapsule(
@@ -380,6 +430,7 @@ fun ScheduleContent(
                 },
             ) {
                 SchedulePullTransition(localPull, state, settledPage, active, onCompletePull, onCancelPull, localTimetableState) { transitionModifier ->
+                    val gridTopInset = innerPadding.calculateTopPadding() + if (showScopeSwitch) 46.dp else 0.dp
                     Box(modifier = transitionModifier) {
                         when (state) {
                             ScheduleUiState.FirstLoading,
@@ -414,27 +465,80 @@ fun ScheduleContent(
                                 }
                             }
 
-                            is ScheduleUiState.Ready -> ScheduleWeeks(
-                                ready = state, display = display,
-                                // [无底部空行] 不再给 Dock 预留滚动尾部留白：网格内容铺到屏幕
-                                // 底部、从玻璃 Dock 下穿过（与今日页一致的穿透效果）。
-                                hasWallpaper = activeWallpaperPath != null, bottomInset = 0.dp,
-                                topInset = innerPadding.calculateTopPadding(),
-                                active = active, onPick = onPickWeek, onPagerWeek = onPagerWeek,
-                                onGroupClick = onGroupClickCallback,
-                                onInteractionLocked = onInteractionLockedCallback, onConfirmMove = onConfirmMove,
-                                onPageSettled = { settledPage = it },
-                                autoSilentExemptKeys = autoSilentExemptKeys,
-                                onQuickCancelOccurrence = { data, block ->
-                                    onDeleteCourse(
-                                        block.course,
-                                        CourseDeleteScope.CANCEL_THIS_WEEK,
-                                        data.displayedWeek,
-                                        block.occurrence?.anchorDate?.toString().orEmpty(),
+                            is ScheduleUiState.Ready -> {
+                                when (effectiveScope) {
+                                    ScheduleViewScope.MINE -> ScheduleWeeks(
+                                        ready = state, display = display,
+                                        // [无底部空行] 不再给 Dock 预留滚动尾部留白：网格内容铺到屏幕
+                                        // 底部、从玻璃 Dock 下穿过（与今日页一致的穿透效果）。
+                                        hasWallpaper = hasAnyWallpaper, bottomInset = 0.dp,
+                                        topInset = gridTopInset,
+                                        active = active, onPick = onPickWeek, onPagerWeek = onPagerWeek,
+                                        onGroupClick = onGroupClickCallback,
+                                        onInteractionLocked = onInteractionLockedCallback, onConfirmMove = onConfirmMove,
+                                        onPageSettled = { settledPage = it },
+                                        autoSilentExemptKeys = autoSilentExemptKeys,
+                                        onQuickCancelOccurrence = { data, block ->
+                                            onDeleteCourse(
+                                                block.course,
+                                                CourseDeleteScope.CANCEL_THIS_WEEK,
+                                                data.displayedWeek,
+                                                block.occurrence?.anchorDate?.toString().orEmpty(),
+                                            )
+                                        },
+                                        onQuickToggleAutoSilent = onQuickToggleAutoSilent,
+                                        onQuickEditCourse = onEditCourse,
                                     )
-                                },
-                                onQuickToggleAutoSilent = onQuickToggleAutoSilent,
-                                onQuickEditCourse = onEditCourse,
+
+                                    ScheduleViewScope.PARTNER -> {
+                                        val partnerData = partnerWeekData
+                                        if (partnerData == null) {
+                                            LoadingState(modifier = Modifier.fillMaxSize().padding(top = gridTopInset))
+                                        } else {
+                                            PartnerWeekView(
+                                                data = partnerData,
+                                                display = display,
+                                                hasWallpaper = hasAnyWallpaper,
+                                                topInset = gridTopInset,
+                                                bottomInset = bottomPadding,
+                                                onGroupClick = { cell -> onGroupClickCallback(partnerData, cell) },
+                                            )
+                                        }
+                                    }
+
+                                    ScheduleViewScope.DUAL -> {
+                                        val comparison = dualComparison
+                                        val currentPartner = partnerInfo
+                                        if (comparison == null || currentPartner == null) {
+                                            LoadingState(modifier = Modifier.fillMaxSize().padding(top = gridTopInset))
+                                        } else {
+                                            DualComparisonPane(
+                                                result = comparison,
+                                                myTimetableId = state.data.timetableId,
+                                                partnerLabel = currentPartner.label,
+                                                showWeekends = display.showWeekends,
+                                                topInset = gridTopInset,
+                                                bottomInset = bottomPadding,
+                                                onCellClick = { inspectedDualCell = it },
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        if (showScopeSwitch && partnerInfo != null) {
+                            ScheduleScopeToggleStrip(
+                                selected = effectiveScope,
+                                partnerLabel = partnerInfo.label,
+                                onSelect = onSelectViewScope,
+                                modifier = Modifier
+                                    .align(Alignment.TopCenter)
+                                    .padding(
+                                        top = innerPadding.calculateTopPadding() + 4.dp,
+                                        start = 16.dp,
+                                        end = 16.dp,
+                                    ),
                             )
                         }
                     }
@@ -488,6 +592,19 @@ fun ScheduleContent(
         onApplyMakeupWeekday = onApplyMakeupWeekday,
         onClearTemporaryDay = onClearTemporaryDay,
     )
+
+    inspectedDualCell?.let { cell ->
+        DualCellInspectDialog(
+            cell = cell,
+            myTimetableId = ready?.data?.timetableId ?: 0L,
+            partnerLabel = partnerInfo?.label ?: "TA",
+            onOpenCompare = {
+                inspectedDualCell = null
+                onOpenCompare()
+            },
+            onDismiss = { inspectedDualCell = null },
+        )
+    }
 }
 
 @Stable
@@ -704,8 +821,10 @@ private fun ScheduleHeader(
     onRestoreWeek: () -> Unit,
     onOpenTemporaryDay: () -> Unit,
     onOpenAiImport: () -> Unit = {},
+    onOpenCompare: () -> Unit = {},
     navigationEnabled: Boolean = true,
     browsing: Boolean = false,
+    forceReadOnly: Boolean = false,
 ) {
     val ready = state as? ScheduleUiState.Ready
     val data = ready?.data
@@ -722,13 +841,14 @@ private fun ScheduleHeader(
             HeaderIconButton(
                 icon = Icons.Filled.Add,
                 contentDescription = "添加课程",
-                enabled = !browsing && data?.readOnly != true,
+                enabled = !browsing && !forceReadOnly && data?.readOnly != true,
                 onClick = onAddCourse,
             )
             HeaderOverflowMenu(
                 onDisplaySettings = onDisplaySettings,
                 onOpenSync = onOpenSync,
                 onOpenAiImport = onOpenAiImport,
+                onOpenCompare = onOpenCompare,
                 canOpenRaw = canOpenRaw,
                 onOpenCourseRaw = onOpenCourseRaw,
                 onPreviousWeek = onPreviousWeek,
@@ -738,7 +858,7 @@ private fun ScheduleHeader(
                 onOpenTemporaryDay = onOpenTemporaryDayCallback@{ onOpenTemporaryDay() },
                 canNavigate = canNavigate,
                 canBackToCurrent = canBackToCurrent,
-                hasData = navigationEnabled && !browsing && data != null && !data.readOnly,
+                hasData = navigationEnabled && !browsing && !forceReadOnly && data != null && !data.readOnly,
             )
         },
     )
@@ -762,6 +882,7 @@ private fun HeaderOverflowMenu(
     onDisplaySettings: () -> Unit,
     onOpenSync: () -> Unit = {},
     onOpenAiImport: () -> Unit = {},
+    onOpenCompare: () -> Unit = {},
     canOpenRaw: Boolean = false,
     onOpenCourseRaw: () -> Unit = {},
     onPreviousWeek: () -> Unit,
@@ -787,6 +908,13 @@ private fun HeaderOverflowMenu(
             expanded = expanded && com.gfs.iyango.feature.main.LocalMainTabActive.current,
             onDismissRequest = onDismissMenu,
         ) {
+            DropdownMenuItem(
+                text = { Text("双人课表对照") },
+                onClick = {
+                    expanded = false
+                    onOpenCompare()
+                },
+            )
             DropdownMenuItem(
                 text = { Text("Ai导入") },
                 onClick = {
@@ -1171,5 +1299,331 @@ private fun ScheduleScreenDarkPreview() {
             onDeleteCourse = { _, _, _, _ -> },
             onApplyAdjustment = { _, _, _, _, _, _, _, _ -> },
         )
+    }
+}
+
+@Composable
+private fun ScheduleScopeToggleStrip(
+    selected: ScheduleViewScope,
+    partnerLabel: String,
+    onSelect: (ScheduleViewScope) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        modifier = modifier.horizontalScroll(rememberScrollState()),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        LiquidFilterChip(
+            selected = selected == ScheduleViewScope.MINE,
+            onClick = { onSelect(ScheduleViewScope.MINE) },
+            label = { Text("我的", maxLines = 1) },
+        )
+        LiquidFilterChip(
+            selected = selected == ScheduleViewScope.PARTNER,
+            onClick = { onSelect(ScheduleViewScope.PARTNER) },
+            label = { Text(partnerLabel, maxLines = 1) },
+        )
+        LiquidFilterChip(
+            selected = selected == ScheduleViewScope.DUAL,
+            onClick = { onSelect(ScheduleViewScope.DUAL) },
+            label = { Text("双人对照", maxLines = 1) },
+        )
+    }
+}
+
+@Composable
+private fun PartnerWeekView(
+    data: WeekScheduleData,
+    display: ScheduleDisplaySettings,
+    hasWallpaper: Boolean,
+    topInset: Dp,
+    bottomInset: Dp,
+    onGroupClick: (ScheduleDisplayProjection.RenderCell) -> Unit,
+) {
+    val layoutCache = remember(data.timetableId) { ScheduleGridLayoutCache() }
+    val sharedTextMeasurer = rememberTextMeasurer(cacheSize = 64)
+    CompositionLocalProvider(
+        LocalScheduleGridLayoutCache provides layoutCache,
+        LocalScheduleTextMeasurer provides sharedTextMeasurer,
+    ) {
+        if (display.viewMode == ScheduleViewMode.TIMELINE) {
+            ScheduleTimelineView(
+                data = data,
+                display = display,
+                hasWallpaper = hasWallpaper,
+                edgeToEdge = true,
+                topInset = topInset,
+                bottomInset = bottomInset,
+                onGroupClick = onGroupClick,
+            )
+        } else {
+            ScheduleWeekGrid(
+                data = data,
+                display = display,
+                hasWallpaper = hasWallpaper,
+                edgeToEdge = true,
+                topInset = topInset,
+                bottomInset = bottomInset,
+                onGroupClick = onGroupClick,
+            )
+        }
+    }
+}
+
+@Composable
+private fun DualComparisonPane(
+    result: TimetableComparisonResult,
+    myTimetableId: Long,
+    partnerLabel: String,
+    showWeekends: Boolean,
+    topInset: Dp,
+    bottomInset: Dp,
+    onCellClick: (ComparisonSlotCell) -> Unit,
+) {
+    val visibleDays = if (showWeekends) 7 else 5
+    val myColor = MaterialTheme.colorScheme.primary
+    val partnerColor = MaterialTheme.colorScheme.secondary
+    val bothColor = MaterialTheme.colorScheme.tertiary
+    val freeColor = LocalBrand.current.accent
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(top = topInset + 4.dp, bottom = bottomInset + 16.dp, start = 16.dp, end = 16.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            DualLegendDot(color = myColor, label = "我")
+            DualLegendDot(color = partnerColor, label = partnerLabel)
+            DualLegendDot(color = bothColor, label = "都有课")
+            DualLegendDot(color = freeColor, label = "共空")
+        }
+
+        GlassSurface(
+            shape = RoundedCornerShape(18.dp),
+            material = GlassMaterial.CONTENT,
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(10.dp),
+                verticalArrangement = Arrangement.spacedBy(5.dp),
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = "节",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.width(22.dp),
+                    )
+                    for (dayIdx in 0 until visibleDays) {
+                        val date = result.dates.getOrNull(dayIdx)
+                        Column(
+                            modifier = Modifier.weight(1f),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                        ) {
+                            Text(
+                                text = DayLabels.shortLabel(dayIdx + 1),
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.Medium,
+                            )
+                            date?.let {
+                                Text(
+                                    text = "${it.dayOfMonth}",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        }
+                    }
+                }
+
+                for (sec in 1..result.maxSection) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            text = "$sec",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.width(22.dp),
+                        )
+                        for (day in 1..visibleDays) {
+                            val cell = result.cells[day to sec] ?: continue
+                            val myBusy = cell.busySources.filter { it.timetableId == myTimetableId }
+                            val partnerBusy = cell.busySources.filter { it.timetableId != myTimetableId }
+                            val hasMine = myBusy.isNotEmpty()
+                            val hasPartner = partnerBusy.isNotEmpty()
+                            val shape = RoundedCornerShape(8.dp)
+                            val (bg, ink, label) = when {
+                                !hasMine && !hasPartner -> Triple(
+                                    freeColor.copy(alpha = 0.16f),
+                                    freeColor,
+                                    "空",
+                                )
+                                hasMine && hasPartner -> Triple(
+                                    bothColor.copy(alpha = 0.24f),
+                                    bothColor,
+                                    "同课",
+                                )
+                                hasMine -> Triple(
+                                    myColor.copy(alpha = 0.22f),
+                                    myColor,
+                                    myBusy.first().courseName.take(3).ifBlank { "我" },
+                                )
+                                else -> Triple(
+                                    partnerColor.copy(alpha = 0.22f),
+                                    partnerColor,
+                                    partnerBusy.first().courseName.take(3).ifBlank { "TA" },
+                                )
+                            }
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(34.dp)
+                                    .clip(shape)
+                                    .background(bg)
+                                    .then(
+                                        if (!hasMine && !hasPartner) {
+                                            Modifier.border(1.dp, freeColor.copy(alpha = 0.45f), shape)
+                                        } else {
+                                            Modifier
+                                        },
+                                    )
+                                    .clickable { onCellClick(cell) }
+                                    .padding(horizontal = 2.dp),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Text(
+                                    text = label,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = if (!hasMine && !hasPartner) FontWeight.SemiBold else FontWeight.Medium,
+                                    color = ink,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Clip,
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun DualLegendDot(
+    color: Color,
+    label: String,
+) {
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(5.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            modifier = Modifier
+                .width(8.dp)
+                .height(8.dp)
+                .clip(CircleShape)
+                .background(color),
+        )
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+        )
+    }
+}
+
+@Composable
+private fun DualCellInspectDialog(
+    cell: ComparisonSlotCell,
+    myTimetableId: Long,
+    partnerLabel: String,
+    onOpenCompare: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val myBusy = cell.busySources.filter { it.timetableId == myTimetableId }
+    val partnerBusy = cell.busySources.filter { it.timetableId != myTimetableId }
+    LiquidAlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(
+                text = "周${DayLabels.shortLabel(cell.dayOfWeek)} 第${cell.section}节",
+                style = MaterialTheme.typography.titleLarge,
+            )
+        },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                DualSideDetailBlock(
+                    ownerLabel = "我",
+                    courses = myBusy.map { ref ->
+                        if (ref.classroom.isNotBlank()) "${ref.courseName} ${ref.classroom}" else ref.courseName
+                    },
+                )
+                DualSideDetailBlock(
+                    ownerLabel = partnerLabel,
+                    courses = partnerBusy.map { ref ->
+                        if (ref.classroom.isNotBlank()) "${ref.courseName} ${ref.classroom}" else ref.courseName
+                    },
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onOpenCompare) {
+                Text("合表详情")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("关闭")
+            }
+        },
+    )
+}
+
+@Composable
+private fun DualSideDetailBlock(
+    ownerLabel: String,
+    courses: List<String>,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        Text(
+            text = ownerLabel,
+            style = MaterialTheme.typography.labelMedium,
+            fontWeight = FontWeight.SemiBold,
+            color = MaterialTheme.colorScheme.primary,
+        )
+        if (courses.isEmpty()) {
+            Text(
+                text = "空闲",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        } else {
+            courses.forEach { line ->
+                Text(
+                    text = line,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+            }
+        }
     }
 }
