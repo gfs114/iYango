@@ -33,6 +33,7 @@ import com.gfs.iyango.feature.main.ai.AiRobotIcon
 enum class MineDestination(val route: String, val title: String, val summary: String) {
     COURSES("courses", "课程管理", "查看课程详情，编辑上课安排"),
     TIMETABLE("timetable", "我的课表", "创建、切换与管理课表"),
+    TIMETABLE_COMPARE("timetablecompare", "合表找空", "对比多张课表 查找共同空课"),
     SEMESTER("semester", "学期管理", "学期日期、教学周与作息时间"),
     EXAMS("exams", "考试安排", "查看和管理考试信息"),
     SEMESTER_SUMMARY("semestersummary", "学期数据卡片", "统计总课时、早八、教学楼与 GPA 并导出液态玻璃海报"),
@@ -58,7 +59,7 @@ enum class MineCategory(
     val destinations: List<MineDestination>,
 ) {
     SCHEDULE("mine/schedule", "课程与课表", "课程 课表 学期 考试",
-        listOf(MineDestination.COURSES, MineDestination.TIMETABLE, MineDestination.SEMESTER, MineDestination.EXAMS, MineDestination.SEMESTER_SUMMARY)),
+        listOf(MineDestination.COURSES, MineDestination.TIMETABLE, MineDestination.TIMETABLE_COMPARE, MineDestination.SEMESTER, MineDestination.EXAMS, MineDestination.SEMESTER_SUMMARY)),
     SCHOOL("mine/school", "教务服务", "账号 教室查询 同步记录",
         listOf(MineDestination.SCHOOL, MineDestination.CLASSROOM, MineDestination.HISTORY)),
     APPEARANCE("mine/appearance", "外观与布局", "主题 壁纸 字体 启动设置",

@@ -2,7 +2,10 @@
 
 package com.gfs.iyango.feature.main.ai
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -18,21 +21,24 @@ import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -40,8 +46,13 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -51,6 +62,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.gfs.iyango.core.designsystem.component.GlassOverlayHeader
 import com.gfs.iyango.core.designsystem.component.GlassScaffold
 import com.gfs.iyango.core.designsystem.component.GlassTopBar
 import com.gfs.iyango.core.designsystem.component.GlassTopBarIconButton
@@ -58,13 +70,20 @@ import com.gfs.iyango.core.designsystem.liquidglass.GlassMaterial
 import com.gfs.iyango.core.designsystem.liquidglass.GlassSurface
 import com.gfs.iyango.core.designsystem.liquidglass.LiquidButton
 import com.gfs.iyango.core.designsystem.liquidglass.LiquidFilterChip
+import com.gfs.iyango.core.designsystem.liquidglass.LiquidModalBottomSheet
 import com.gfs.iyango.core.designsystem.liquidglass.LiquidOutlinedButton
 import com.gfs.iyango.core.designsystem.liquidglass.LiquidOutlinedTextField
 import com.gfs.iyango.core.designsystem.theme.LocalBrand
 import com.gfs.iyango.core.domain.AiChatRole
+import com.gfs.iyango.core.domain.AiChatSessionSummary
+import com.gfs.iyango.core.domain.AiImagePayload
 import com.gfs.iyango.core.domain.AiProviderConfig
+import com.gfs.iyango.core.domain.AiProviderProfile
 import com.gfs.iyango.core.domain.AssistantActionStatus
 import com.gfs.iyango.core.domain.AssistantPendingAction
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 internal object AiAssistantTags {
     const val CONFIG_STRIP = "ai_assistant_config_strip"
@@ -79,6 +98,7 @@ private val STARTER_PROMPTS = listOf(
     "今天还有什么课",
     "明天有什么课",
     "算一下当前均绩",
+    "通识选修还差多少学分",
     "近期考试安排",
     "现在有哪些空教室",
 )
@@ -89,12 +109,33 @@ fun AiAssistantScreen(
     onOpenAiConfig: () -> Unit,
     viewModel: AiAssistantViewModel = hiltViewModel(),
 ) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     val config by viewModel.config.collectAsStateWithLifecycle()
+    val profiles by viewModel.profiles.collectAsStateWithLifecycle()
+    val activeProfileId by viewModel.activeProfileId.collectAsStateWithLifecycle()
+    val sessions by viewModel.sessions.collectAsStateWithLifecycle()
+    val activeSessionId by viewModel.activeSessionId.collectAsStateWithLifecycle()
     val messages by viewModel.messages.collectAsStateWithLifecycle()
     val inputText by viewModel.inputText.collectAsStateWithLifecycle()
+    val attachedImages by viewModel.attachedImages.collectAsStateWithLifecycle()
     val sending by viewModel.sending.collectAsStateWithLifecycle()
+    val streamingText by viewModel.streamingText.collectAsStateWithLifecycle()
     val progressLabel by viewModel.progressLabel.collectAsStateWithLifecycle()
     val error by viewModel.error.collectAsStateWithLifecycle()
+
+    val imagePicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.GetMultipleContents(),
+    ) { uris ->
+        if (uris.isNotEmpty()) {
+            scope.launch {
+                val (decoded, skipped) = withContext(Dispatchers.IO) {
+                    decodeSelectedAiImages(context, uris, AiAssistantViewModel.MAX_ATTACHED_IMAGES)
+                }
+                viewModel.addImages(decoded, skipped)
+            }
+        }
+    }
 
     val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner) {
@@ -124,6 +165,18 @@ fun AiAssistantScreen(
         onCancelAction = viewModel::cancelAction,
         onClearConversation = viewModel::clearConversation,
         onConsumeError = viewModel::consumeError,
+        streamingText = streamingText,
+        attachedImages = attachedImages,
+        onPickImages = { imagePicker.launch("image/*") },
+        onRemoveImage = viewModel::removeImage,
+        profiles = profiles,
+        activeProfileId = activeProfileId,
+        onSelectProfile = viewModel::selectProfile,
+        sessions = sessions,
+        activeSessionId = activeSessionId,
+        onSelectSession = viewModel::switchToSession,
+        onNewSession = viewModel::createNewSession,
+        onDeleteSession = viewModel::deleteSession,
     )
 }
 
@@ -145,9 +198,24 @@ internal fun AiAssistantContent(
     onCancelAction: (String, String) -> Unit,
     onClearConversation: () -> Unit,
     onConsumeError: () -> Unit,
+    streamingText: String = "",
+    attachedImages: List<AiImagePayload> = emptyList(),
+    onPickImages: (() -> Unit)? = null,
+    onRemoveImage: (Int) -> Unit = {},
+    profiles: List<AiProviderProfile> = listOf(AiProviderProfile()),
+    activeProfileId: String = AiProviderProfile.DEFAULT_ID,
+    onSelectProfile: (String) -> Unit = {},
+    sessions: List<AiChatSessionSummary> = emptyList(),
+    activeSessionId: String? = null,
+    onSelectSession: (String) -> Unit = {},
+    onNewSession: () -> Unit = {},
+    onDeleteSession: (String) -> Unit = {},
 ) {
     val listState = rememberLazyListState()
-    LaunchedEffect(messages.size, sending) {
+    var showProfileSheet by remember { mutableStateOf(false) }
+    var showSessionSheet by remember { mutableStateOf(false) }
+
+    LaunchedEffect(messages.size, sending, streamingText.length) {
         val total = messages.size + if (sending) 1 else 0
         if (total > 0) {
             listState.animateScrollToItem(total - 1)
@@ -164,7 +232,15 @@ internal fun AiAssistantContent(
                     }
                 },
                 actions = {
+                    if (sessions.isNotEmpty()) {
+                        GlassTopBarIconButton(onClick = { showSessionSheet = true }) {
+                            Icon(Icons.AutoMirrored.Filled.List, contentDescription = "历史对话")
+                        }
+                    }
                     if (messages.isNotEmpty()) {
+                        GlassTopBarIconButton(onClick = onNewSession) {
+                            Icon(Icons.Filled.Add, contentDescription = "新对话")
+                        }
                         GlassTopBarIconButton(onClick = onClearConversation) {
                             Icon(Icons.Filled.Delete, contentDescription = "清空对话")
                         }
@@ -192,9 +268,18 @@ internal fun AiAssistantContent(
                     .padding(horizontal = 16.dp),
             ) {
                 Spacer(Modifier.height(8.dp))
+                val activeProfileName = profiles.firstOrNull { it.id == activeProfileId }?.name.orEmpty()
                 AssistantConnectionBar(
                     config = config,
-                    onConfigure = onOpenAiConfig,
+                    profileName = activeProfileName,
+                    hasMultipleProfiles = profiles.size > 1,
+                    onConfigure = {
+                        if (profiles.size > 1) {
+                            showProfileSheet = true
+                        } else {
+                            onOpenAiConfig()
+                        }
+                    },
                 )
 
                 error?.let { msg ->
@@ -290,10 +375,17 @@ internal fun AiAssistantContent(
                         }
                         if (sending) {
                             item(key = "sending_indicator") {
-                                AssistantLoadingRow(
-                                    label = progressLabel.ifBlank { "处理中" },
-                                    onCancel = onCancelSending,
-                                )
+                                if (streamingText.isNotEmpty()) {
+                                    AssistantStreamingBubble(
+                                        text = streamingText,
+                                        onCancel = onCancelSending,
+                                    )
+                                } else {
+                                    AssistantLoadingRow(
+                                        label = progressLabel.ifBlank { "处理中" },
+                                        onCancel = onCancelSending,
+                                    )
+                                }
                             }
                         }
                     }
@@ -302,11 +394,147 @@ internal fun AiAssistantContent(
 
             AssistantInputBar(
                 inputText = inputText,
+                attachedImages = attachedImages,
                 sending = sending,
                 configured = config.isConfigured,
                 onInputTextChange = onInputTextChange,
+                onPickImages = onPickImages,
+                onRemoveImage = onRemoveImage,
                 onSend = onSend,
             )
+        }
+    }
+
+    if (showProfileSheet) {
+        LiquidModalBottomSheet(onDismissRequest = { showProfileSheet = false }) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp, vertical = 12.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                GlassOverlayHeader(
+                    title = "切换 AI 接口档案",
+                    actions = {
+                        TextButton(
+                            onClick = {
+                                showProfileSheet = false
+                                onOpenAiConfig()
+                            },
+                        ) { Text("管理接口") }
+                    },
+                )
+                profiles.forEach { profile ->
+                    val selected = profile.id == activeProfileId
+                    GlassSurface(
+                        shape = RoundedCornerShape(14.dp),
+                        material = GlassMaterial.CONTENT,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable {
+                                onSelectProfile(profile.id)
+                                showProfileSheet = false
+                            },
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 14.dp, vertical = 12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = profile.name,
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+                                )
+                                Text(
+                                    text = "${profile.config.protocol.shortLabel}  ${profile.config.model}",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                            }
+                            if (selected) {
+                                Text(
+                                    text = "当前",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = LocalBrand.current.accent,
+                                )
+                            }
+                        }
+                    }
+                }
+                Spacer(Modifier.height(12.dp))
+            }
+        }
+    }
+
+    if (showSessionSheet) {
+        LiquidModalBottomSheet(onDismissRequest = { showSessionSheet = false }) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp, vertical = 12.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                GlassOverlayHeader(
+                    title = "对话历史",
+                    actions = {
+                        TextButton(
+                            onClick = {
+                                showSessionSheet = false
+                                onNewSession()
+                            },
+                        ) { Text("新对话") }
+                    },
+                )
+                sessions.forEach { session ->
+                    val selected = session.id == activeSessionId
+                    GlassSurface(
+                        shape = RoundedCornerShape(14.dp),
+                        material = GlassMaterial.CONTENT,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable {
+                                onSelectSession(session.id)
+                                showSessionSheet = false
+                            },
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(start = 14.dp, end = 6.dp, top = 8.dp, bottom = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = session.title,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                                Text(
+                                    text = "${session.messageCount} 条消息",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                            IconButton(onClick = { onDeleteSession(session.id) }) {
+                                Icon(
+                                    imageVector = Icons.Filled.Delete,
+                                    contentDescription = "删除会话",
+                                    modifier = Modifier.size(18.dp),
+                                )
+                            }
+                        }
+                    }
+                }
+                Spacer(Modifier.height(12.dp))
+            }
         }
     }
 }
@@ -314,10 +542,16 @@ internal fun AiAssistantContent(
 @Composable
 private fun AssistantConnectionBar(
     config: AiProviderConfig,
+    profileName: String,
+    hasMultipleProfiles: Boolean,
     onConfigure: () -> Unit,
 ) {
     val label = if (config.isConfigured) {
-        "${config.protocol.shortLabel}  ${config.model}"
+        listOf(
+            profileName.takeIf { it.isNotBlank() && hasMultipleProfiles },
+            config.protocol.shortLabel,
+            config.model,
+        ).filterNotNull().joinToString("  ")
     } else {
         "未配置 AI 接口"
     }
@@ -396,15 +630,26 @@ private fun AssistantMessageRow(
             material = GlassMaterial.CONTENT,
             modifier = Modifier.widthIn(max = 620.dp),
         ) {
-            Text(
-                text = item.text,
-                style = MaterialTheme.typography.bodyMedium,
-                color = when {
-                    item.isError -> MaterialTheme.colorScheme.error
-                    else -> MaterialTheme.colorScheme.onSurface
-                },
+            Column(
                 modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
-            )
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                if (isUser && item.imageCount > 0) {
+                    Text(
+                        text = "已附带 ${item.imageCount} 张图片",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = brand.accent,
+                    )
+                }
+                Text(
+                    text = item.text,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = when {
+                        item.isError -> MaterialTheme.colorScheme.error
+                        else -> MaterialTheme.colorScheme.onSurface
+                    },
+                )
+            }
         }
 
         item.pendingActions.forEach { action ->
@@ -413,6 +658,33 @@ private fun AssistantMessageRow(
                 onConfirm = { onConfirmAction(action.id) },
                 onCancel = { onCancelAction(action.id) },
             )
+        }
+    }
+}
+
+@Composable
+private fun AssistantStreamingBubble(
+    text: String,
+    onCancel: () -> Unit,
+) {
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalAlignment = Alignment.Start,
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        GlassSurface(
+            shape = RoundedCornerShape(16.dp),
+            material = GlassMaterial.CONTENT,
+            modifier = Modifier.widthIn(max = 620.dp),
+        ) {
+            Text(
+                text = text,
+                style = MaterialTheme.typography.bodyMedium,
+                modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+            )
+        }
+        TextButton(onClick = onCancel) {
+            Text("停止生成")
         }
     }
 }
@@ -529,36 +801,92 @@ private fun AssistantLoadingRow(
 @Composable
 private fun AssistantInputBar(
     inputText: String,
+    attachedImages: List<AiImagePayload>,
     sending: Boolean,
     configured: Boolean,
     onInputTextChange: (String) -> Unit,
+    onPickImages: (() -> Unit)?,
+    onRemoveImage: (Int) -> Unit,
     onSend: () -> Unit,
 ) {
-    Row(
+    Column(
         modifier = Modifier
             .widthIn(max = 840.dp)
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 10.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        LiquidOutlinedTextField(
-            value = inputText,
-            onValueChange = onInputTextChange,
-            placeholder = { Text("输入问题或指令") },
-            maxLines = 4,
-            modifier = Modifier
-                .weight(1f)
-                .testTag(AiAssistantTags.INPUT_FIELD),
-        )
-        LiquidButton(
-            onClick = onSend,
-            enabled = configured && !sending && inputText.isNotBlank(),
-            modifier = Modifier
-                .height(48.dp)
-                .testTag(AiAssistantTags.SEND_BUTTON),
+        if (attachedImages.isNotEmpty()) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                attachedImages.forEachIndexed { index, img ->
+                    GlassSurface(
+                        shape = RoundedCornerShape(10.dp),
+                        material = GlassMaterial.CONTENT,
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(start = 10.dp, end = 4.dp, top = 4.dp, bottom = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        ) {
+                            Text(
+                                text = img.displayName.ifBlank { "图片 ${index + 1}" },
+                                style = MaterialTheme.typography.labelSmall,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.widthIn(max = 120.dp),
+                            )
+                            IconButton(
+                                onClick = { onRemoveImage(index) },
+                                modifier = Modifier.size(24.dp),
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Filled.Close,
+                                    contentDescription = "移除图片",
+                                    modifier = Modifier.size(14.dp),
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "发送")
+            if (onPickImages != null) {
+                GlassTopBarIconButton(
+                    onClick = onPickImages,
+                    enabled = configured && !sending,
+                ) {
+                    Icon(Icons.Filled.Add, contentDescription = "添加图片")
+                }
+            }
+            LiquidOutlinedTextField(
+                value = inputText,
+                onValueChange = onInputTextChange,
+                placeholder = { Text("输入问题或指令") },
+                maxLines = 4,
+                modifier = Modifier
+                    .weight(1f)
+                    .testTag(AiAssistantTags.INPUT_FIELD),
+            )
+            LiquidButton(
+                onClick = onSend,
+                enabled = configured && !sending && (inputText.isNotBlank() || attachedImages.isNotEmpty()),
+                modifier = Modifier
+                    .height(48.dp)
+                    .testTag(AiAssistantTags.SEND_BUTTON),
+            ) {
+                Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "发送")
+            }
         }
     }
 }

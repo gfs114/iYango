@@ -76,6 +76,7 @@ import com.gfs.iyango.core.model.Timetable
 fun TimetableManageScreen(
     onBack: () -> Unit,
     onOpenSync: () -> Unit = {},
+    onOpenCompare: () -> Unit = {},
     viewModel: TimetableManageViewModel = hiltViewModel(),
 ) {
     val timetables by viewModel.timetables.collectAsStateWithLifecycle()
@@ -89,6 +90,11 @@ fun TimetableManageScreen(
             GlassTopBar(
                 title = "我的课表",
                 actions = {
+                    if (timetables.size >= 2) {
+                        TextButton(onClick = onOpenCompare) {
+                            Text("合表找空")
+                        }
+                    }
                     GlassTopBarIconButton(onClick = { nameDialog = NameDialog.Create }) {
                         Icon(Icons.Filled.Add, contentDescription = "新建课表")
                     }

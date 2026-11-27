@@ -195,42 +195,42 @@ enum class ThemeMode(val code: Int, val label: String) {
     }
 }
 
-/** 液态玻璃底栏高级视觉参数（默认值与现项目 DockGlass 一致）。 */
+/** 液态玻璃底栏高级视觉参数（对齐 Kyant0 标准 Apple 液态玻璃 + 酷安暗色玻璃基线）。 */
 data class DockGlassSettings(
     /** 基础条与隐藏层背景模糊半径（dp），0 = 纯折射无模糊。 */
-    val blurDp: Float = 2f,
+    val blurDp: Float = 8f,
     /** 基础条透镜宽（dp）。 */
-    val lensWidthDp: Float = 12f,
+    val lensWidthDp: Float = 24f,
     /** 基础条透镜高（dp）。 */
-    val lensHeightDp: Float = 14f,
+    val lensHeightDp: Float = 24f,
     /** 细亮边宽度（dp）。 */
     val edgeWidthDp: Float = 0.5f,
     /** 细亮边模糊半径（dp）。 */
-    val edgeBlurDp: Float = 0.6f,
+    val edgeBlurDp: Float = 0.25f,
     /** 基础条细亮边不透明度（0..1）。 */
-    val edgeAlphaBase: Float = 0.22f,
+    val edgeAlphaBase: Float = 0.85f,
     /** 隐藏层细亮边峰值（0..1）。 */
-    val edgeAlphaHidden: Float = 0.25f,
+    val edgeAlphaHidden: Float = 0.90f,
     /** 指示器细亮边峰值（0..1）。 */
-    val edgeAlphaIndicator: Float = 0.35f,
+    val edgeAlphaIndicator: Float = 1f,
     /** 指示器按压透镜宽（dp）。 */
-    val indicatorLensWidthDp: Float = 8f,
+    val indicatorLensWidthDp: Float = 10f,
     /** 指示器按压透镜高（dp）。 */
-    val indicatorLensHeightDp: Float = 10f,
+    val indicatorLensHeightDp: Float = 14f,
     /** 指示器透镜色散开关。 */
     val indicatorChromaticAberration: Boolean = true,
     /** 指示器常态底色不透明度（0..0.5）。 */
-    val indicatorSurfaceAlpha: Float = 0.02f,
+    val indicatorSurfaceAlpha: Float = 0.10f,
     /** 指示器按压加深层不透明度（0..0.5）。 */
-    val indicatorSurfacePressedAlpha: Float = 0.02f,
+    val indicatorSurfacePressedAlpha: Float = 0.03f,
     /** 指示器外投影半径（dp）。 */
-    val indicatorShadowRadiusDp: Float = 12f,
+    val indicatorShadowRadiusDp: Float = 16f,
     /** 指示器外投影峰值不透明度（0..1）。 */
-    val indicatorShadowAlpha: Float = 0.3f,
+    val indicatorShadowAlpha: Float = 0.35f,
     /** 指示器内阴影峰值半径（dp）。 */
-    val indicatorInnerRadiusDp: Float = 4f,
+    val indicatorInnerRadiusDp: Float = 8f,
     /** 指示器内阴影峰值不透明度（0..1）。 */
-    val indicatorInnerAlpha: Float = 0.4f,
+    val indicatorInnerAlpha: Float = 0.55f,
     /** Android 8-11 浅色主题老设备底栏实体底色不透明度（0..1）。 */
     val legacyTier0AlphaLight: Float = 0.55f,
     /** Android 8-11 暗色主题老设备底栏实体底色不透明度（0..1）。 */
@@ -238,23 +238,23 @@ data class DockGlassSettings(
 ) {
     /** 将非有限浮点与越界数值钳制到安全渲染范围，避免底层 RenderEffect/RuntimeShader 异常。 */
     fun sanitized(): DockGlassSettings = DockGlassSettings(
-        blurDp = blurDp.finiteOr(2f).coerceIn(0f, 24f),
-        lensWidthDp = lensWidthDp.finiteOr(12f).coerceIn(0f, 40f),
-        lensHeightDp = lensHeightDp.finiteOr(14f).coerceIn(0f, 40f),
+        blurDp = blurDp.finiteOr(8f).coerceIn(0f, 24f),
+        lensWidthDp = lensWidthDp.finiteOr(24f).coerceIn(0f, 40f),
+        lensHeightDp = lensHeightDp.finiteOr(24f).coerceIn(0f, 40f),
         edgeWidthDp = edgeWidthDp.finiteOr(0.5f).coerceIn(0f, 3f),
-        edgeBlurDp = edgeBlurDp.finiteOr(0.6f).coerceIn(0f, 4f),
-        edgeAlphaBase = edgeAlphaBase.finiteOr(0.22f).coerceIn(0f, 1f),
-        edgeAlphaHidden = edgeAlphaHidden.finiteOr(0.25f).coerceIn(0f, 1f),
-        edgeAlphaIndicator = edgeAlphaIndicator.finiteOr(0.35f).coerceIn(0f, 1f),
-        indicatorLensWidthDp = indicatorLensWidthDp.finiteOr(8f).coerceIn(0f, 32f),
-        indicatorLensHeightDp = indicatorLensHeightDp.finiteOr(10f).coerceIn(0f, 32f),
+        edgeBlurDp = edgeBlurDp.finiteOr(0.25f).coerceIn(0f, 4f),
+        edgeAlphaBase = edgeAlphaBase.finiteOr(0.85f).coerceIn(0f, 1f),
+        edgeAlphaHidden = edgeAlphaHidden.finiteOr(0.90f).coerceIn(0f, 1f),
+        edgeAlphaIndicator = edgeAlphaIndicator.finiteOr(1f).coerceIn(0f, 1f),
+        indicatorLensWidthDp = indicatorLensWidthDp.finiteOr(10f).coerceIn(0f, 32f),
+        indicatorLensHeightDp = indicatorLensHeightDp.finiteOr(14f).coerceIn(0f, 32f),
         indicatorChromaticAberration = indicatorChromaticAberration,
-        indicatorSurfaceAlpha = indicatorSurfaceAlpha.finiteOr(0.02f).coerceIn(0f, 0.5f),
-        indicatorSurfacePressedAlpha = indicatorSurfacePressedAlpha.finiteOr(0.02f).coerceIn(0f, 0.5f),
-        indicatorShadowRadiusDp = indicatorShadowRadiusDp.finiteOr(12f).coerceIn(0f, 32f),
-        indicatorShadowAlpha = indicatorShadowAlpha.finiteOr(0.3f).coerceIn(0f, 1f),
-        indicatorInnerRadiusDp = indicatorInnerRadiusDp.finiteOr(4f).coerceIn(0f, 20f),
-        indicatorInnerAlpha = indicatorInnerAlpha.finiteOr(0.4f).coerceIn(0f, 1f),
+        indicatorSurfaceAlpha = indicatorSurfaceAlpha.finiteOr(0.10f).coerceIn(0f, 0.5f),
+        indicatorSurfacePressedAlpha = indicatorSurfacePressedAlpha.finiteOr(0.03f).coerceIn(0f, 0.5f),
+        indicatorShadowRadiusDp = indicatorShadowRadiusDp.finiteOr(16f).coerceIn(0f, 32f),
+        indicatorShadowAlpha = indicatorShadowAlpha.finiteOr(0.35f).coerceIn(0f, 1f),
+        indicatorInnerRadiusDp = indicatorInnerRadiusDp.finiteOr(8f).coerceIn(0f, 20f),
+        indicatorInnerAlpha = indicatorInnerAlpha.finiteOr(0.55f).coerceIn(0f, 1f),
         legacyTier0AlphaLight = legacyTier0AlphaLight.finiteOr(0.55f).coerceIn(0f, 1f),
         legacyTier0AlphaDark = legacyTier0AlphaDark.finiteOr(0.35f).coerceIn(0f, 1f),
     )
@@ -328,52 +328,53 @@ data class GlobalGlassSettings(
 
     companion object {
         val DefaultNavigation = GlassLayerSettings(
-            blurDp = 3f,
-            lensWidthDp = 12f,
-            lensHeightDp = 14f,
+            blurDp = 8f,
+            lensWidthDp = 16f,
+            lensHeightDp = 24f,
             edgeWidthDp = 0.5f,
-            edgeBlurDp = 0.6f,
-            edgeAlpha = 0.22f,
-            tintAlphaLight = 0f,
-            tintAlphaDark = 0f,
+            edgeBlurDp = 0.25f,
+            edgeAlpha = 0.85f,
+            tintAlphaLight = 0.36f,
+            tintAlphaDark = 0.34f,
             tier0AlphaLight = 0.55f,
             tier0AlphaDark = 0.35f,
         )
         val DefaultContent = GlassLayerSettings(
-            blurDp = 14f,
-            lensWidthDp = 10f,
-            lensHeightDp = 12f,
-            edgeWidthDp = 0.6f,
-            edgeBlurDp = 0.8f,
-            edgeAlpha = 0.34f,
-            tintAlphaLight = 0.48f,
+            blurDp = 8f,
+            lensWidthDp = 14f,
+            lensHeightDp = 28f,
+            edgeWidthDp = 0.5f,
+            edgeBlurDp = 0.25f,
+            edgeAlpha = 0.72f,
+            tintAlphaLight = 0.46f,
             tintAlphaDark = 0.38f,
             tier0AlphaLight = 0.95f,
             tier0AlphaDark = 0.88f,
         )
         val DefaultControl = GlassLayerSettings(
-            blurDp = 4f,
+            blurDp = 2f,
             lensWidthDp = 12f,
             lensHeightDp = 24f,
-            edgeWidthDp = 0.6f,
-            edgeBlurDp = 0.6f,
-            edgeAlpha = 0.36f,
-            tintAlphaLight = 0.32f,
-            tintAlphaDark = 0.24f,
+            edgeWidthDp = 0.5f,
+            edgeBlurDp = 0.25f,
+            edgeAlpha = 0.90f,
+            tintAlphaLight = 0.30f,
+            tintAlphaDark = 0.26f,
             tier0AlphaLight = 0.90f,
             tier0AlphaDark = 0.80f,
         )
         val DefaultOverlay = GlassLayerSettings(
-            blurDp = 24f,
-            lensWidthDp = 14f,
-            lensHeightDp = 20f,
-            edgeWidthDp = 0.75f,
-            edgeBlurDp = 0.8f,
-            edgeAlpha = 0.42f,
-            tintAlphaLight = 0.72f,
-            tintAlphaDark = 0.62f,
+            blurDp = 16f,
+            lensWidthDp = 20f,
+            lensHeightDp = 40f,
+            edgeWidthDp = 0.6f,
+            edgeBlurDp = 0.3f,
+            edgeAlpha = 0.85f,
+            tintAlphaLight = 0.60f,
+            tintAlphaDark = 0.42f,
             tier0AlphaLight = 0.96f,
             tier0AlphaDark = 0.90f,
+            depthEffect = true,
         )
         val ClearPreset = GlobalGlassSettings(
             navigation = DefaultNavigation.cleared(),
@@ -406,11 +407,11 @@ data class LiquidGlassPreset(
         val BuiltIns: List<LiquidGlassPreset> = listOf(
             LiquidGlassPreset(
                 id = "default",
-                name = "默认均衡",
+                name = "标准液态",
                 globalGlass = GlobalGlassSettings(),
                 dockGlass = DockGlassSettings(),
-                dockSurfaceAlphaLight = 0f,
-                dockSurfaceAlphaDark = 0f,
+                dockSurfaceAlphaLight = ThemeSettings.DEFAULT_DOCK_SURFACE_ALPHA_LIGHT,
+                dockSurfaceAlphaDark = ThemeSettings.DEFAULT_DOCK_SURFACE_ALPHA_DARK,
             ),
             LiquidGlassPreset(
                 id = "clear",
@@ -516,6 +517,7 @@ data class LiquidGlassPreset(
                         edgeAlpha = 0.28f,
                         tintAlphaLight = 0.85f,
                         tintAlphaDark = 0.78f,
+                        depthEffect = false,
                     ),
                 ),
                 dockGlass = DockGlassSettings(
@@ -536,14 +538,19 @@ data class ThemeSettings(
     val tintBackground: Boolean = false,
     /** 深色模式策略（跟随系统/浅色/深色）。 */
     val themeMode: ThemeMode = ThemeMode.SYSTEM,
-    /** 液态玻璃底栏可读性蒙层不透明度（亮色模式），范围 0..0.8；默认 0 = 无蒙层（纯折射玻璃）。 */
-    val dockSurfaceAlphaLight: Float = 0f,
-    /** 液态玻璃底栏可读性蒙层不透明度（暗色模式），范围 0..0.8；默认 0 = 无蒙层（纯折射玻璃）。 */
-    val dockSurfaceAlphaDark: Float = 0f,
+    /** 液态玻璃底栏可读性蒙层不透明度（亮色模式），范围 0..0.8；默认标准 Apple 液态玻璃 0.40。 */
+    val dockSurfaceAlphaLight: Float = DEFAULT_DOCK_SURFACE_ALPHA_LIGHT,
+    /** 液态玻璃底栏可读性蒙层不透明度（暗色模式），范围 0..0.8；默认标准 Apple 液态玻璃 0.36。 */
+    val dockSurfaceAlphaDark: Float = DEFAULT_DOCK_SURFACE_ALPHA_DARK,
     /** 液态玻璃底栏高级视觉参数。 */
     val dockGlass: DockGlassSettings = DockGlassSettings(),
     /** 全局四类液态玻璃参数（导航栏 / 卡片内容 / 交互控件 / 弹窗浮层）。 */
     val globalGlass: GlobalGlassSettings = GlobalGlassSettings(),
     /** 用户保存的自定义液态玻璃预设方案（最多 10 个）。 */
     val savedGlassPresets: List<LiquidGlassPreset> = emptyList(),
-)
+) {
+    companion object {
+        const val DEFAULT_DOCK_SURFACE_ALPHA_LIGHT = 0.40f
+        const val DEFAULT_DOCK_SURFACE_ALPHA_DARK = 0.36f
+    }
+}

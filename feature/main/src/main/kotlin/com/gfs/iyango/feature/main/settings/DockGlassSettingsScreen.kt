@@ -386,8 +386,8 @@ fun DockGlassSettingsScreen(
 
     val isDefault = if (fullMode) {
         draft.dockGlass == DefaultDockGlass &&
-            draft.dockSurfaceAlphaLight == 0f &&
-            draft.dockSurfaceAlphaDark == 0f
+            draft.dockSurfaceAlphaLight == DefaultThemeSettings.dockSurfaceAlphaLight &&
+            draft.dockSurfaceAlphaDark == DefaultThemeSettings.dockSurfaceAlphaDark
     } else {
         draft.dockGlass.blurDp == DefaultDockGlass.blurDp &&
             draft.dockGlass.lensWidthDp == DefaultDockGlass.lensWidthDp &&
@@ -413,8 +413,8 @@ fun DockGlassSettingsScreen(
                         onClick = {
                             val reset = if (fullMode) {
                                 draft.copy(
-                                    dockSurfaceAlphaLight = 0f,
-                                    dockSurfaceAlphaDark = 0f,
+                                    dockSurfaceAlphaLight = DefaultThemeSettings.dockSurfaceAlphaLight,
+                                    dockSurfaceAlphaDark = DefaultThemeSettings.dockSurfaceAlphaDark,
                                     dockGlass = DockGlassSettings(),
                                 )
                             } else {

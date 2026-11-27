@@ -32,6 +32,7 @@ import com.gfs.iyango.core.designsystem.liquidglass.LiquidSlider
 import com.gfs.iyango.core.designsystem.liquidglass.LiquidToggle
 import com.gfs.iyango.core.model.GridLineStyle
 import com.gfs.iyango.core.model.ScheduleDisplaySettings
+import com.gfs.iyango.core.model.ScheduleViewMode
 import java.util.Locale
 import kotlin.math.roundToInt
 
@@ -81,6 +82,25 @@ fun ScheduleQuickSettingsSheet(
 
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
 
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Text("视图模式", style = MaterialTheme.typography.bodyLarge)
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    listOf(
+                        ScheduleViewMode.GRID to "网格",
+                        ScheduleViewMode.TIMELINE to "时间轴",
+                    ).forEach { (mode, label) ->
+                        LiquidFilterChip(
+                            selected = display.viewMode == mode,
+                            onClick = { onUpdateDisplay { it.copy(viewMode = mode) } },
+                            label = { Text(label) },
+                        )
+                    }
+                }
+            }
             QuickSwitchRow(
                 title = "显示周末",
                 checked = display.showWeekends,
@@ -142,6 +162,11 @@ fun ScheduleQuickSettingsSheet(
                 title = "显示午休分隔",
                 checked = display.showLunchBreak,
                 onCheckedChange = { checked -> onUpdateDisplay { it.copy(showLunchBreak = checked) } },
+            )
+            QuickSwitchRow(
+                title = "显示晚休分隔",
+                checked = display.showEveningBreak,
+                onCheckedChange = { checked -> onUpdateDisplay { it.copy(showEveningBreak = checked) } },
             )
             QuickSwitchRow(
                 title = "显示教室",

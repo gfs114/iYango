@@ -123,8 +123,8 @@ private val SideNavigationWidth = 88.dp
 
 /** 外部入口可打开的次级页白名单（与 platform 层 LaunchIntents.ROUTES 非 Tab 部分保持一致）。 */
 private val ExternalRoutes = setOf(
-    "timetable", "courses", "semester", "semestersummary", "importexport",
-    "display", "wallpaper", "reminder", "exams",
+    "timetable", "timetablecompare", "courses", "semester", "semestersummary", "importexport",
+    "display", "wallpaper", "reminder", "exams", "classroom", "aiassistant",
 )
 
 /**

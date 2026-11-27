@@ -33,8 +33,6 @@ import androidx.compose.ui.unit.dp
 import com.gfs.iyango.core.designsystem.motion.AppMotion
 import com.gfs.iyango.core.designsystem.motion.LocalMotionEnabled
 import com.kyant.backdrop.drawBackdrop
-import com.kyant.backdrop.effects.blur
-import com.kyant.backdrop.effects.lens
 import com.kyant.backdrop.highlight.Highlight
 import com.kyant.backdrop.highlight.HighlightStyle
 import com.kyant.shapes.Capsule
@@ -127,15 +125,14 @@ fun LiquidCheckbox(
                     shape = { CheckboxShape },
                     effects = {
                         if (highlight != null && highlight.pressProgress > 0.01f) {
-                            if (spec.blurDp > 0.01f) {
-                                blur(spec.blurDp.dp.toPx())
-                            }
-                            if (tier == GlassTier.FULL && spec.lensWidthDp > 0.01f && spec.lensHeightDp > 0.01f) {
-                                lens(
-                                    refractionHeight = (spec.lensWidthDp / 3f).dp.toPx(),
-                                    refractionAmount = (spec.lensHeightDp / 3f).dp.toPx(),
-                                )
-                            }
+                            applyGlassEffects(
+                                blurDp = spec.blurDp,
+                                lensWidthDp = spec.lensWidthDp / 3f,
+                                lensHeightDp = spec.lensHeightDp / 3f,
+                                canRefract = tier == GlassTier.FULL,
+                                depthEffect = spec.depthEffect,
+                                chromaticAberration = spec.chromaticAberration,
+                            )
                         }
                     },
                     highlight = {
@@ -307,15 +304,14 @@ fun LiquidRadioButton(
                     shape = { RadioShape },
                     effects = {
                         if (highlight != null && highlight.pressProgress > 0.01f) {
-                            if (spec.blurDp > 0.01f) {
-                                blur(spec.blurDp.dp.toPx())
-                            }
-                            if (tier == GlassTier.FULL && spec.lensWidthDp > 0.01f && spec.lensHeightDp > 0.01f) {
-                                lens(
-                                    refractionHeight = (spec.lensWidthDp / 3f).dp.toPx(),
-                                    refractionAmount = (spec.lensHeightDp / 3f).dp.toPx(),
-                                )
-                            }
+                            applyGlassEffects(
+                                blurDp = spec.blurDp,
+                                lensWidthDp = spec.lensWidthDp / 3f,
+                                lensHeightDp = spec.lensHeightDp / 3f,
+                                canRefract = tier == GlassTier.FULL,
+                                depthEffect = spec.depthEffect,
+                                chromaticAberration = spec.chromaticAberration,
+                            )
                         }
                     },
                     highlight = {

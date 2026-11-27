@@ -160,10 +160,20 @@ class RoomEffectiveSchedule @Inject constructor(
         val courses = db.courseDao().getAllByTimetable(table.id).map { it.toModel() }
         val adjustments = db.occurrenceAdjustmentDao().getByTimetable(table.id).map { it.toModel() }
         val occurrences = resolveTable(table,semester,slots,courses,adjustments,temporary,range)
-        val displaySources = temporary.associate { day -> day.date to
-            db.timetableDao().getById(day.sourceTimetableId)?.source.orEmpty() }
-        val displaySlots = temporary.associate { day -> day.date to
-            db.timeSlotDao().getByTimetable(day.sourceTimetableId).map { it.toModel() } }
+        val displaySources = temporary.associate { day ->
+            day.date to if (day.sourceTimetableId == table.id) {
+                table.source
+            } else {
+                db.timetableDao().getById(day.sourceTimetableId)?.source.orEmpty()
+            }
+        }
+        val displaySlots = temporary.associate { day ->
+            day.date to if (day.sourceTimetableId == table.id) {
+                slots
+            } else {
+                db.timeSlotDao().getByTimetable(day.sourceTimetableId).map { it.toModel() }
+            }
+        }
         return generateSequence(range.start) { it.plusDays(1) }.takeWhile { it <= range.endInclusive }.map { date ->
             val isTemporary = temporary.any { it.date == date.toString() }
             EffectiveScheduleDay(date,table,semester,
@@ -197,7 +207,7 @@ class RoomEffectiveSchedule @Inject constructor(
         )
     }
 
-    /** 临时整天来源课表在对应日期的基础实例（来源时刻固定，不递归临时整天）。 */
+    /** 临时整天来源课表在对应日期的基础实例（来源时刻固定，不递归临时整天；同表支持按星期调休补课）。 */
     private suspend fun temporaryDaySources(
         target: Timetable,
         temporaryDays: List<TemporaryDay>,
@@ -207,6 +217,28 @@ class RoomEffectiveSchedule @Inject constructor(
         temporaryDays.forEach { day ->
             val date = runCatching { LocalDate.parse(day.date) }.getOrNull() ?: return@forEach
             if (date !in range) return@forEach
+            val makeupWeekday = com.gfs.iyango.core.domain.HolidayMakeupCodec.parseWeekday(day.title)
+            if (makeupWeekday != null && day.sourceTimetableId == target.id) {
+                val targetMonday = date.minusDays((date.dayOfWeek.value - 1).toLong())
+                val sourceDate = targetMonday.plusDays((makeupWeekday - 1).toLong())
+                val sourceOccurrences = ResolveScheduleOccurrences.invoke(
+                    timetable = target,
+                    semester = db.semesterDao().getCurrent(target.id)?.toModel(),
+                    timeSlots = db.timeSlotDao().getByTimetable(target.id).map { it.toModel() },
+                    courses = db.courseDao().getAllByTimetable(target.id).map { it.toModel() },
+                    range = sourceDate..sourceDate,
+                )
+                result[day.date] = sourceOccurrences.map { occ ->
+                    occ.copy(
+                        occurrenceId = "temp-makeup-${target.id}-${day.date}-${occ.course.id}-${occ.course.startSection}",
+                        date = date,
+                        anchorDate = date,
+                        isTemporary = true,
+                        course = occ.course.copy(dayOfWeek = date.dayOfWeek.value),
+                    )
+                }
+                return@forEach
+            }
             if (day.sourceTimetableId <= 0 || day.sourceTimetableId == target.id) {
                 return@forEach
             }

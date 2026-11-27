@@ -27,7 +27,6 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import com.kyant.backdrop.drawBackdrop
-import com.kyant.backdrop.effects.blur
 import com.kyant.backdrop.highlight.Highlight
 import com.kyant.backdrop.highlight.HighlightStyle
 import com.kyant.shapes.RoundedRectangle
@@ -64,9 +63,12 @@ private fun LiquidFieldBackdropSurface(
                 backdrop = backdrop,
                 shape = { shape },
                 effects = {
-                    if (spec.blurDp > 0.01f) {
-                        blur(spec.blurDp.dp.toPx())
-                    }
+                    applyGlassEffects(
+                        blurDp = spec.blurDp,
+                        lensWidthDp = 0f,
+                        lensHeightDp = 0f,
+                        canRefract = false,
+                    )
                 },
                 highlight = {
                     if (spec.edgeAlpha > 0.004f && spec.edgeWidthDp > 0.01f) {

@@ -11,6 +11,8 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.WindowInsets
@@ -77,6 +79,7 @@ import com.gfs.iyango.core.designsystem.component.RefreshNoticeCapsule
 import com.gfs.iyango.core.designsystem.component.SectionHeader
 import com.gfs.iyango.core.designsystem.liquidglass.GlassMaterial
 import com.gfs.iyango.core.designsystem.liquidglass.GlassSurface
+import com.gfs.iyango.core.designsystem.liquidglass.LiquidFilterChip
 import com.gfs.iyango.core.designsystem.motion.AppMotion
 import com.gfs.iyango.core.designsystem.motion.LocalMotionEnabled
 import com.gfs.iyango.core.designsystem.motion.motionPress
@@ -285,6 +288,8 @@ fun TodayScreen(
                                 onOpenSchedule = onOpenSchedule,
                                 onOpenExams = onOpenExams,
                                 onProfileClick = onOpenSchool,
+                                onApplyMakeupWeekday = viewModel::applyMakeupWeekday,
+                                onRestoreTemporaryDay = viewModel::restoreTemporaryDay,
                             )
                         }
                     }
@@ -436,6 +441,8 @@ internal fun TodayReadyContent(
     home: HomePreferences = HomePreferences(),
     timing: StateFlow<TodayCourseTiming>? = null,
     animateLayoutChanges: Boolean = false,
+    onApplyMakeupWeekday: (LocalDate, Int) -> Unit = { _, _ -> },
+    onRestoreTemporaryDay: (Long, LocalDate) -> Unit = { _, _ -> },
 ) {
     val animateItems = animateLayoutChanges && LocalMotionEnabled.current
     val visibleModules = remember(home) { home.sanitized().moduleOrder.filter { it !in home.hiddenModules } }
@@ -472,7 +479,16 @@ internal fun TodayReadyContent(
                     if (id != HomeModule.PROFILE.id) SectionHeader(title = homeModuleTitle(id))
                     when (id) {
                         HomeModule.PROFILE.id -> ProfileCard(state, onProfileClick)
-                        HomeModule.TODAY.id -> TodayCoursesSection(state, paletteLight, paletteDark, onCourseClick, onOpenSchedule, timing)
+                        HomeModule.TODAY.id -> TodayCoursesSection(
+                            state = state,
+                            paletteLight = paletteLight,
+                            paletteDark = paletteDark,
+                            onCourseClick = onCourseClick,
+                            onOpenSchedule = onOpenSchedule,
+                            timing = timing,
+                            onApplyMakeupWeekday = onApplyMakeupWeekday,
+                            onRestoreTemporaryDay = onRestoreTemporaryDay,
+                        )
                         HomeModule.SHORTCUTS.id -> QuickTiles(home.quickActions, onQuickTile)
                         HomeModule.CALENDAR.id -> MonthCalendarCard(state, paletteLight, paletteDark)
                         HomeModule.TOMORROW.id -> TomorrowSection(state, paletteLight, paletteDark, onCourseClick)
@@ -582,12 +598,37 @@ private fun ProfileCard(state: TodayUiState.Ready, onClick: () -> Unit) {
             modifier = Modifier.padding(16.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Column(Modifier.weight(1f)) {
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text(
                     text = "${greetingText(state.now.hour)}，$name",
                     style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.Bold,
                 )
+                val holiday = state.todayHoliday
+                if (holiday != null || state.isTemporaryDay) {
+                    val badgeColor = when {
+                        state.isTemporaryDay -> MaterialTheme.colorScheme.primary
+                        holiday?.isOffDay == true -> Color(0xFF16A34A)
+                        else -> Color(0xFFD97706)
+                    }
+                    val badgeLabel = when {
+                        state.isTemporaryDay -> "调休补课中"
+                        holiday?.isOffDay == true -> "假 ${holiday.name}"
+                        holiday != null -> "调 ${holiday.name}"
+                        else -> ""
+                    }
+                    Surface(
+                        shape = RoundedCornerShape(999.dp),
+                        color = badgeColor.copy(alpha = 0.14f),
+                    ) {
+                        Text(
+                            text = badgeLabel,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = badgeColor,
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
+                        )
+                    }
+                }
             }
             Icon(
                 Icons.AutoMirrored.Filled.KeyboardArrowRight,
@@ -599,6 +640,7 @@ private fun ProfileCard(state: TodayUiState.Ready, onClick: () -> Unit) {
 }
 
 /** 今日课程区（§2.3/§2.4）。 */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun TodayCoursesSection(
     state: TodayUiState.Ready,
@@ -607,9 +649,65 @@ private fun TodayCoursesSection(
     onCourseClick: (OccurrenceRow) -> Unit,
     onOpenSchedule: () -> Unit,
     timing: StateFlow<TodayCourseTiming>? = null,
+    onApplyMakeupWeekday: (LocalDate, Int) -> Unit = { _, _ -> },
+    onRestoreTemporaryDay: (Long, LocalDate) -> Unit = { _, _ -> },
 ) {
     val todayOccurrences = remember(state.todayRows) { state.todayRows.map { it.occurrence } }
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        val holiday = state.todayHoliday
+        if (holiday != null && !holiday.isOffDay && !state.isTemporaryDay) {
+            GlassSurface(
+                material = GlassMaterial.CONTENT,
+                shape = RoundedCornerShape(16.dp),
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Column(
+                    modifier = Modifier.padding(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Text(
+                        text = "${holiday.name}调休补课",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = Color(0xFFD97706),
+                    )
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        (1..5).forEach { weekday ->
+                            LiquidFilterChip(
+                                selected = holiday.makeupWeekday == weekday,
+                                onClick = { onApplyMakeupWeekday(state.today, weekday) },
+                                label = { Text(com.gfs.iyango.core.model.DayLabels.shortLabel(weekday)) },
+                            )
+                        }
+                    }
+                }
+            }
+        } else if (state.isTemporaryDay) {
+            GlassSurface(
+                material = GlassMaterial.CONTENT,
+                shape = RoundedCornerShape(12.dp),
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = "当日已使用临时替换课表",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                    androidx.compose.material3.TextButton(
+                        onClick = { onRestoreTemporaryDay(state.timetable.id, state.today) },
+                    ) {
+                        Text("恢复原课表")
+                    }
+                }
+            }
+        }
         if (timing == null) HomeTimingCard(state.timing, todayOccurrences) {
             val target = state.timing.current ?: state.timing.next
             if (target != null) onCourseClick(OccurrenceRow(target, TodayCourseTiming.status(target, state.timing.now))) else onOpenSchedule()

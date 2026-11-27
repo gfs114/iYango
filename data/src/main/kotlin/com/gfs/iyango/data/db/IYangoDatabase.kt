@@ -7,8 +7,8 @@ import androidx.room.TypeConverters
 /**
  * 应用主数据库（Room）。
  *
- * - version = 5，`exportSchema = true`：schema JSON 由 KSP 导出到 `data/schemas/`；
- *   迁移 v1→v2、v2→v3、v3→v4 见 [IYangoDatabaseMigrations]；
+ * - version = 8，`exportSchema = true`：schema JSON 由 KSP 导出到 `data/schemas/`；
+ *   迁移路径（v1→v8）见 [IYangoDatabaseMigrations]；
  * - v2：course 表唯一索引 `index_course_override`（timetableId+overrideOfId+
  *   overrideWeek），非调整行以 NULL 落库获得"部分唯一"语义；
  * - v3：教务连接、考试、成绩快照/记录、同步批次/变化、学校快照、临时调整、
@@ -18,6 +18,8 @@ import androidx.room.TypeConverters
  * - v6：widget_config 增加 WakeUp 样式对齐列（背景色/背景图、顶栏与按钮、经典渲染
  *   颜色与尺寸、周视图开关），存量卡片按 MIGRATION_5_6 从 appearance 与
  *   glassOpacityPercent 平滑推导 showBg/bgColor；
+ * - v7：成绩快照与记录扩展完整性及原始属性列，新增学分目标、分类配额与人工消歧规则表；
+ * - v8：新增 AI 助理会话表 `ai_chat_session` 与消息表 `ai_chat_message`（外键级联删除）；
  * - 转换器：[Converters]（LocalDate、List<Int>）。
  */
 @Database(
@@ -42,8 +44,10 @@ import androidx.room.TypeConverters
         CreditPlanEntity::class,
         CreditCategoryPlanEntity::class,
         CreditResolutionRuleEntity::class,
+        AiChatSessionEntity::class,
+        AiChatMessageEntity::class,
     ],
-    version = 7,
+    version = 8,
     exportSchema = true,
 )
 @TypeConverters(Converters::class)
@@ -85,11 +89,13 @@ abstract class IYangoDatabase : RoomDatabase() {
 
     abstract fun creditProgressDao(): CreditProgressDao
 
+    abstract fun aiChatDao(): AiChatDao
+
     companion object {
         /** 数据库文件名。 */
         const val NAME = "iyango.db"
 
         /** 当前 schema 版本。 */
-        const val VERSION = 7
+        const val VERSION = 8
     }
 }

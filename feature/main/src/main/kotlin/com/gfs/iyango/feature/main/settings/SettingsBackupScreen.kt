@@ -1,4 +1,4 @@
-@file:OptIn(ExperimentalMaterial3Api::class)
+@file:OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 
 package com.gfs.iyango.feature.main.settings
 
@@ -7,8 +7,11 @@ import com.gfs.iyango.core.designsystem.component.GlassTopBar
 import com.gfs.iyango.core.designsystem.component.GlassTopBarIconButton
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -21,6 +24,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -29,7 +33,9 @@ import com.gfs.iyango.core.designsystem.liquidglass.GlassMaterial
 import com.gfs.iyango.core.designsystem.liquidglass.GlassSurface
 import com.gfs.iyango.core.designsystem.liquidglass.LiquidAlertDialog
 import com.gfs.iyango.core.designsystem.liquidglass.LiquidButton
+import com.gfs.iyango.core.designsystem.liquidglass.LiquidFilterChip
 import com.gfs.iyango.core.designsystem.liquidglass.LiquidOutlinedButton
+import com.gfs.iyango.core.designsystem.liquidglass.LiquidOutlinedTextField
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.getValue
@@ -40,6 +46,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -47,6 +54,8 @@ import com.gfs.iyango.core.designsystem.component.SectionCard
 import com.gfs.iyango.core.designsystem.component.SettingSwitchRow
 import com.gfs.iyango.core.domain.SettingsBackupPreview
 import com.gfs.iyango.core.domain.ThemeMode
+import com.gfs.iyango.core.domain.WebDavConfig
+import com.gfs.iyango.core.domain.WebDavPreset
 import com.gfs.iyango.core.model.NavigationLayout
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -73,6 +82,25 @@ fun SettingsBackupScreen(
     val busy by viewModel.busy.collectAsStateWithLifecycle()
     val error by viewModel.error.collectAsStateWithLifecycle()
     val doneMessage by viewModel.doneMessage.collectAsStateWithLifecycle()
+    val storedWebDav by viewModel.webDavConfig.collectAsStateWithLifecycle()
+    val webDavBackups by viewModel.webDavBackups.collectAsStateWithLifecycle()
+    val webDavPreview by viewModel.webDavPreview.collectAsStateWithLifecycle()
+    val webDavBusy by viewModel.webDavBusy.collectAsStateWithLifecycle()
+
+    var davPreset by remember(storedWebDav.preset) { mutableStateOf(storedWebDav.preset) }
+    var davUrl by remember(storedWebDav.serverUrl) { mutableStateOf(storedWebDav.serverUrl) }
+    var davUser by remember(storedWebDav.username) { mutableStateOf(storedWebDav.username) }
+    var davPassword by remember { mutableStateOf("") }
+    var davDirectory by remember(storedWebDav.directory) { mutableStateOf(storedWebDav.directory) }
+    var davAutoSync by remember(storedWebDav.autoSyncEnabled) { mutableStateOf(storedWebDav.autoSyncEnabled) }
+
+    fun currentWebDavConfig(): WebDavConfig = storedWebDav.copy(
+        preset = davPreset,
+        serverUrl = davUrl,
+        username = davUser,
+        directory = davDirectory,
+        autoSyncEnabled = davAutoSync,
+    )
 
     var exportTargetUri by remember { mutableStateOf<android.net.Uri?>(null) }
     val exportLauncher = rememberLauncherForActivityResult(
@@ -184,6 +212,129 @@ fun SettingsBackupScreen(
                 }
             }
 
+            SectionCard(title = "WebDAV 云同步") {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        WebDavPreset.entries.forEach { preset ->
+                            LiquidFilterChip(
+                                selected = davPreset == preset,
+                                onClick = {
+                                    davPreset = preset
+                                    if (preset.defaultUrl.isNotEmpty()) davUrl = preset.defaultUrl
+                                    davDirectory = preset.defaultDirectory
+                                },
+                                label = { Text(preset.label) },
+                            )
+                        }
+                    }
+                    LiquidOutlinedTextField(
+                        value = davUrl,
+                        onValueChange = { davUrl = it },
+                        label = { Text("服务器地址") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    LiquidOutlinedTextField(
+                        value = davUser,
+                        onValueChange = { davUser = it },
+                        label = { Text("账号") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    LiquidOutlinedTextField(
+                        value = davPassword,
+                        onValueChange = { davPassword = it },
+                        label = { Text("应用密码") },
+                        visualTransformation = PasswordVisualTransformation(),
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    LiquidOutlinedTextField(
+                        value = davDirectory,
+                        onValueChange = { davDirectory = it },
+                        label = { Text("远端目录") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    SettingSwitchRow(
+                        title = "进入前台自动备份（6 小时）",
+                        checked = davAutoSync,
+                        onCheckedChange = {
+                            davAutoSync = it
+                            viewModel.saveWebDavConfig(currentWebDavConfig().copy(autoSyncEnabled = it), davPassword.takeIf { p -> p.isNotEmpty() })
+                        },
+                    )
+                    if (storedWebDav.lastSyncAtMillis > 0L) {
+                        val lastText = remember(storedWebDav.lastSyncAtMillis) {
+                            SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault())
+                                .format(Date(storedWebDav.lastSyncAtMillis))
+                        }
+                        Text(
+                            text = "最近同步 $lastText",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        LiquidOutlinedButton(
+                            onClick = {
+                                viewModel.testWebDav(currentWebDavConfig(), davPassword.takeIf { it.isNotEmpty() })
+                            },
+                            enabled = !webDavBusy && davUrl.isNotBlank() && davUser.isNotBlank(),
+                            modifier = Modifier.weight(1f).height(44.dp),
+                        ) { Text("测试连接") }
+                        LiquidButton(
+                            onClick = {
+                                viewModel.backupToWebDav(currentWebDavConfig(), davPassword.takeIf { it.isNotEmpty() })
+                            },
+                            enabled = !webDavBusy && davUrl.isNotBlank() && davUser.isNotBlank(),
+                            modifier = Modifier.weight(1f).height(44.dp),
+                        ) { Text(if (webDavBusy) "处理中…" else "立即备份") }
+                    }
+                    LiquidOutlinedButton(
+                        onClick = {
+                            viewModel.loadWebDavBackups(currentWebDavConfig(), davPassword.takeIf { it.isNotEmpty() })
+                        },
+                        enabled = !webDavBusy && davUrl.isNotBlank() && davUser.isNotBlank(),
+                        modifier = Modifier.fillMaxWidth().height(44.dp),
+                    ) { Text("从云端拉取备份") }
+                    if (webDavBackups.isNotEmpty()) {
+                        HorizontalDivider()
+                        webDavBackups.take(8).forEach { remote ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable(enabled = !webDavBusy) {
+                                        viewModel.previewWebDavBackup(remote)
+                                    }
+                                    .padding(vertical = 8.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Column(Modifier.weight(1f)) {
+                                    Text(remote.fileName, style = MaterialTheme.typography.bodyMedium)
+                                    if (remote.lastModified.isNotBlank()) {
+                                        Text(
+                                            remote.lastModified,
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        )
+                                    }
+                                }
+                                Text(
+                                    "恢复",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = MaterialTheme.colorScheme.primary,
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
             SectionCard(title = "重置设置") {
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     LiquidOutlinedButton(
@@ -206,6 +357,33 @@ fun SettingsBackupScreen(
             },
             dismissButton = {
                 TextButton(onClick = viewModel::dismissReset) { Text("取消") }
+            },
+        )
+    }
+
+    webDavPreview?.let { (cloudPreview, _) ->
+        val timeText = remember(cloudPreview.exportedAt) {
+            SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault())
+                .format(Date(cloudPreview.exportedAt))
+        }
+        LiquidAlertDialog(
+            onDismissRequest = viewModel::dismissWebDavPreview,
+            title = { Text("确认从云端恢复？", style = MaterialTheme.typography.titleLarge) },
+            text = {
+                Text(
+                    "文件：${cloudPreview.fileName}\n" +
+                        "备份时间：$timeText\n" +
+                        "包含 ${cloudPreview.timetableCount} 张课表、${cloudPreview.courseCount} 条课程、${cloudPreview.examCount} 场考试\n" +
+                        "将覆盖本地课表与个性化设置",
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = viewModel::confirmRestoreWebDav, enabled = !webDavBusy) {
+                    Text("确认恢复")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = viewModel::dismissWebDavPreview) { Text("取消") }
             },
         )
     }

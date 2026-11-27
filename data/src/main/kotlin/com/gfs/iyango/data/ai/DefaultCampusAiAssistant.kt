@@ -5,6 +5,7 @@ import com.gfs.iyango.core.domain.AiChatMessage
 import com.gfs.iyango.core.domain.AiChatPort
 import com.gfs.iyango.core.domain.AiChatRole
 import com.gfs.iyango.core.domain.AiChatTurnResult
+import com.gfs.iyango.core.domain.AiImagePayload
 import com.gfs.iyango.core.domain.AiProviderConfig
 import com.gfs.iyango.core.domain.AiToolCall
 import com.gfs.iyango.core.domain.AiToolDefinition
@@ -19,11 +20,14 @@ import com.gfs.iyango.core.domain.ClassroomQuickFilter
 import com.gfs.iyango.core.domain.ClassroomQuickFilterEngine
 import com.gfs.iyango.core.domain.ClassroomRepositoryPort
 import com.gfs.iyango.core.domain.CourseRules
+import com.gfs.iyango.core.domain.CreditProgressCalculator
+import com.gfs.iyango.core.domain.CreditProgressPort
 import com.gfs.iyango.core.domain.EffectiveSchedulePort
 import com.gfs.iyango.core.domain.ExamRepositoryPort
 import com.gfs.iyango.core.domain.GradeRepositoryPort
 import com.gfs.iyango.core.domain.GradeStatisticsCalculator
 import com.gfs.iyango.core.domain.MoveOccurrence
+import com.gfs.iyango.core.domain.NoopCreditProgressPort
 import com.gfs.iyango.core.domain.ReminderCoordinatorPort
 import com.gfs.iyango.core.domain.ScheduleDataPort
 import com.gfs.iyango.core.domain.SchoolAuthPort
@@ -41,6 +45,7 @@ import com.gfs.iyango.core.model.GradeRecord
 import com.gfs.iyango.core.model.SchoolConnection
 import com.gfs.iyango.core.model.SchoolConnectionStatus
 import com.gfs.iyango.core.model.WeekType
+import com.gfs.iyango.core.model.formatCreditBigDecimal
 import java.time.Clock
 import java.time.LocalDate
 import java.time.LocalTime
@@ -86,16 +91,62 @@ class DefaultCampusAiAssistant @Inject constructor(
     private val classroomRepository: ClassroomRepositoryPort,
     private val reminderCoordinator: ReminderCoordinatorPort,
     private val clock: Clock,
+    private val creditProgress: CreditProgressPort,
 ) : CampusAiAssistantPort {
+
+    internal constructor(
+        aiChat: AiChatPort,
+        effectiveSchedule: EffectiveSchedulePort,
+        timetableRepository: TimetableRepositoryPort,
+        scheduleData: ScheduleDataPort,
+        adjustmentRepository: AdjustmentRepositoryPort,
+        schoolAuth: SchoolAuthPort,
+        gradeRepository: GradeRepositoryPort,
+        examRepository: ExamRepositoryPort,
+        classroomRepository: ClassroomRepositoryPort,
+        reminderCoordinator: ReminderCoordinatorPort,
+        clock: Clock,
+    ) : this(
+        aiChat = aiChat,
+        effectiveSchedule = effectiveSchedule,
+        timetableRepository = timetableRepository,
+        scheduleData = scheduleData,
+        adjustmentRepository = adjustmentRepository,
+        schoolAuth = schoolAuth,
+        gradeRepository = gradeRepository,
+        examRepository = examRepository,
+        classroomRepository = classroomRepository,
+        reminderCoordinator = reminderCoordinator,
+        clock = clock,
+        creditProgress = NoopCreditProgressPort,
+    )
 
     override suspend fun sendMessage(
         config: AiProviderConfig,
         history: List<AiChatMessage>,
         userText: String,
         onToolProgress: (String) -> Unit,
+    ): AssistantTurnOutput = sendMessageStream(
+        config = config,
+        history = history,
+        userText = userText,
+        images = emptyList(),
+        onToolProgress = onToolProgress,
+        onTextDelta = {},
+    )
+
+    override suspend fun sendMessageStream(
+        config: AiProviderConfig,
+        history: List<AiChatMessage>,
+        userText: String,
+        images: List<AiImagePayload>,
+        onToolProgress: (String) -> Unit,
+        onTextDelta: (String) -> Unit,
     ): AssistantTurnOutput {
-        val cleanUserText = userText.trim()
-        if (cleanUserText.isEmpty()) {
+        val cleanUserText = userText.trim().ifEmpty {
+            if (images.isNotEmpty()) "请识别图片内容并协助处理。" else ""
+        }
+        if (cleanUserText.isEmpty() && images.isEmpty()) {
             return AssistantTurnOutput(replyText = "", errorMessage = "请输入问题或指令")
         }
         if (!config.isConfigured) {
@@ -103,12 +154,18 @@ class DefaultCampusAiAssistant @Inject constructor(
         }
 
         val systemPrompt = buildSystemPrompt()
-        val workingMessages = (history + AiChatMessage(role = AiChatRole.USER, content = cleanUserText)).toMutableList()
+        val workingMessages = (
+            history + AiChatMessage(
+                role = AiChatRole.USER,
+                content = cleanUserText,
+                images = images,
+            )
+        ).toMutableList()
         val traces = mutableListOf<AssistantToolTrace>()
         val pendingActions = mutableListOf<AssistantPendingAction>()
 
         for (round in 0 until MAX_TOOL_ROUNDS) {
-            when (val turn = aiChat.completeTurn(config, systemPrompt, workingMessages, TOOL_DEFINITIONS)) {
+            when (val turn = aiChat.streamTurn(config, systemPrompt, workingMessages, TOOL_DEFINITIONS, onTextDelta)) {
                 is AiChatTurnResult.Failed -> {
                     return AssistantTurnOutput(
                         replyText = "",
@@ -156,7 +213,7 @@ class DefaultCampusAiAssistant @Inject constructor(
             }
         }
 
-        return when (val finalTurn = aiChat.completeTurn(config, systemPrompt, workingMessages, tools = emptyList())) {
+        return when (val finalTurn = aiChat.streamTurn(config, systemPrompt, workingMessages, tools = emptyList(), onTextDelta)) {
             is AiChatTurnResult.Reply -> AssistantTurnOutput(
                 replyText = stripForbiddenBullets(finalTurn.text),
                 toolTraces = traces,
@@ -174,8 +231,12 @@ class DefaultCampusAiAssistant @Inject constructor(
     override suspend fun executePendingAction(action: AssistantPendingAction): Result<String> =
         when (val payload = action.payload) {
             is AssistantWritePayload.AddCourse -> executeAddCourse(payload)
+            is AssistantWritePayload.EditCourse -> executeEditCourse(payload)
+            is AssistantWritePayload.DeleteCourse -> executeDeleteCourse(payload)
             is AssistantWritePayload.AdjustCourse -> executeAdjustCourse(payload)
             is AssistantWritePayload.AddExam -> executeAddExam(payload)
+            is AssistantWritePayload.EditExam -> executeEditExam(payload)
+            is AssistantWritePayload.DeleteExam -> executeDeleteExam(payload)
         }
 
     private suspend fun executeAddCourse(payload: AssistantWritePayload.AddCourse): Result<String> {
@@ -260,7 +321,65 @@ class DefaultCampusAiAssistant @Inject constructor(
             return Result.failure(IllegalArgumentException(msg))
         }
         examRepository.save(exam)
+        runCatching { reminderCoordinator.refresh() }
         return Result.success("已添加考试 ${exam.subject}")
+    }
+
+    private suspend fun executeEditCourse(payload: AssistantWritePayload.EditCourse): Result<String> {
+        val existing = scheduleData.observeCourses(payload.timetableId).first()
+            .firstOrNull { it.id == payload.courseId }
+            ?: return Result.failure(IllegalStateException("未找到原课程，可能已被删除"))
+        val updated = existing.copy(
+            name = payload.name.trim(),
+            teacher = payload.teacher.trim(),
+            classroom = payload.classroom.trim(),
+            dayOfWeek = payload.dayOfWeek,
+            startSection = payload.startSection,
+            endSection = payload.endSection,
+            startWeek = payload.startWeek,
+            endWeek = payload.endWeek,
+            weekType = payload.weekType,
+            remark = payload.remark.trim(),
+        )
+        CourseValidator.validate(updated)?.let { msg ->
+            return Result.failure(IllegalArgumentException(msg))
+        }
+        scheduleData.saveCourse(updated)
+        runCatching { reminderCoordinator.refresh() }
+        return Result.success("已更新课程 ${updated.name}")
+    }
+
+    private suspend fun executeDeleteCourse(payload: AssistantWritePayload.DeleteCourse): Result<String> {
+        scheduleData.deleteCourses(payload.timetableId, setOf(payload.courseId))
+        runCatching { reminderCoordinator.refresh() }
+        return Result.success("已删除课程 ${payload.courseName}")
+    }
+
+    private suspend fun executeEditExam(payload: AssistantWritePayload.EditExam): Result<String> {
+        val existing = examRepository.get(payload.examId)
+            ?: return Result.failure(IllegalStateException("未找到原考试记录，可能已被删除"))
+        val updated = existing.copy(
+            subject = payload.subject.trim(),
+            date = payload.date.trim(),
+            startTime = payload.startTime.trim(),
+            endTime = payload.endTime.trim(),
+            location = payload.location.trim(),
+            seat = payload.seat.trim(),
+            note = payload.note.trim(),
+            updatedAt = clock.millis(),
+        )
+        ExamValidator.validate(updated)?.let { msg ->
+            return Result.failure(IllegalArgumentException(msg))
+        }
+        examRepository.save(updated)
+        runCatching { reminderCoordinator.refresh() }
+        return Result.success("已更新考试 ${updated.subject}")
+    }
+
+    private suspend fun executeDeleteExam(payload: AssistantWritePayload.DeleteExam): Result<String> {
+        examRepository.delete(payload.examId)
+        runCatching { reminderCoordinator.refresh() }
+        return Result.success("已删除考试 ${payload.subject}")
     }
 
     private suspend fun buildSystemPrompt(): String {
@@ -274,14 +393,15 @@ class DefaultCampusAiAssistant @Inject constructor(
         val weekLabel = if (currentWeek > 0) "第${currentWeek}周" else "非教学周"
         val tableName = currentTable?.name?.ifBlank { "默认课表" } ?: "未选中课表"
         return """
-            你是 iYango 校园助手，运行在用户手机本地，通过工具直接读取与维护用户的课表、成绩、考试和教室数据。
+            你是 iYango 校园助手，运行在用户手机本地，通过工具直接读取与维护用户的课表、成绩、学分进度、考试和教室数据。
             当前日期：${today}（${weekdayLabel(today.dayOfWeek.value)}），当前时间：$nowTime
             当前课表：$tableName，当前学期教学周：$weekLabel
 
             工作准则：
-            1. 回答课表、课程、成绩、绩点、考试、空教室问题时必须先调用对应工具获取真实数据，严禁凭空编造课程、时间、地点或分数。
-            2. 新增课程、单次调课/停课、添加考试时，必须调用 propose_add_course / propose_adjust_course / propose_add_exam 生成待确认卡片，并在回复中提示用户在下方确认卡片中点击「确认执行」。
-            3. 回复简洁清晰，列出条目时直接换行，禁止使用圆点分隔符「·」或「•」。
+            1. 回答课表、课程、成绩、绩点、学分进度、考试、空教室问题时必须先调用对应工具获取真实数据，严禁凭空编造课程、时间、地点或分数。
+            2. 新增/修改/删除课程、单次调课/停课、新增/修改/删除考试时，必须调用对应 propose_* 工具生成待确认卡片，并在回复中提示用户在下方确认卡片中点击「确认执行」。
+            3. 当用户发送群通知、考表、调课截图时，提取核心信息后主动调用 propose_add_course / propose_adjust_course / propose_add_exam 生成确认卡片。
+            4. 回复简洁清晰，列出条目时直接换行，禁止使用圆点分隔符「·」或「•」。
         """.trimIndent()
     }
 
@@ -295,11 +415,16 @@ class DefaultCampusAiAssistant @Inject constructor(
             "search_courses" -> handleSearchCourses(args)
             "get_grades_summary" -> handleGetGradesSummary(args)
             "simulate_gpa" -> handleSimulateGpa(args)
+            "get_credit_progress" -> handleGetCreditProgress(args)
             "get_upcoming_exams" -> handleGetUpcomingExams(args)
             "find_free_classrooms" -> handleFindFreeClassrooms(args)
             "propose_add_course" -> handleProposeAddCourse(args, pendingActions)
+            "propose_edit_course" -> handleProposeEditCourse(args, pendingActions)
+            "propose_delete_course" -> handleProposeDeleteCourse(args, pendingActions)
             "propose_adjust_course" -> handleProposeAdjustCourse(args, pendingActions)
             "propose_add_exam" -> handleProposeAddExam(args, pendingActions)
+            "propose_edit_exam" -> handleProposeEditExam(args, pendingActions)
+            "propose_delete_exam" -> handleProposeDeleteExam(args, pendingActions)
             else -> buildJsonObject { put("error", "未知工具: ${call.name}") }.toString()
         }
     }
@@ -902,6 +1027,269 @@ class DefaultCampusAiAssistant @Inject constructor(
         }.toString()
     }
 
+    private suspend fun handleGetCreditProgress(args: JsonObject): String {
+        val connection = resolveGradeConnection()
+            ?: return jsonError("当前未绑定教务账号，暂无学分进度数据")
+        val accountKey = connection.accountSubject.ifEmpty { connection.id }
+        val source = gradeRepository.observeCreditProgressSource(accountKey).first()
+        val plan = creditProgress.getAccountPlan(accountKey)
+        val report = CreditProgressCalculator.calculate(source, plan)
+        val categoryKeyword = args.stringArg("category")
+        val categories = if (categoryKeyword.isNotEmpty()) {
+            report.categoryProgressList.filter {
+                it.category.displayName.contains(categoryKeyword, ignoreCase = true)
+            }
+        } else {
+            report.categoryProgressList
+        }
+        return buildJsonObject {
+            put("coverageStatus", report.coverageStatus.name)
+            put("coveredSemesterCount", report.coveredSemesterCount)
+            put("targetSemesterCount", report.targetSemesterCount)
+            put("earnedTotalCredits", formatCreditBigDecimal(report.earnedTotalCredits))
+            report.totalTargetCredits?.let { put("totalTargetCredits", formatCreditBigDecimal(it)) }
+            report.remainingTotalCredits?.let { put("remainingTotalCredits", formatCreditBigDecimal(it)) }
+            put("pendingCourseCount", report.pendingCourses.size)
+            put("notCountedCourseCount", report.notCountedCourses.size)
+            putJsonArray("categories") {
+                categories.forEach { cat ->
+                    addJsonObject {
+                        put("id", cat.category.categoryId)
+                        put("name", cat.category.displayName)
+                        put("earnedCredits", formatCreditBigDecimal(cat.earnedCredits))
+                        cat.targetCredits?.let { put("targetCredits", formatCreditBigDecimal(it)) }
+                        cat.remainingCredits?.let { put("remainingCredits", formatCreditBigDecimal(it)) }
+                        put("pendingCount", cat.pendingCount)
+                    }
+                }
+            }
+        }.toString()
+    }
+
+    private suspend fun handleProposeEditCourse(
+        args: JsonObject,
+        pendingActions: MutableList<AssistantPendingAction>,
+    ): String {
+        val currentTable = timetableRepository.observeCurrent().first()
+            ?: return jsonError("当前没有可用课表")
+        val baseCourses = scheduleData.observeCourses(currentTable.id).first()
+            .filter { it.overrideOfId == 0L }
+        val courseId = args.intArg("course_id")?.toLong()
+        val courseName = args.stringArg("course_name")
+        val target = when {
+            courseId != null && courseId > 0L -> baseCourses.firstOrNull { it.id == courseId }
+            courseName.isNotEmpty() -> baseCourses.firstOrNull { it.name.contains(courseName, ignoreCase = true) }
+            else -> null
+        } ?: return jsonError("未在当前课表中找到匹配课程")
+
+        val newName = args.stringArg("new_name").ifBlank { target.name }
+        val newTeacher = args.stringArg("teacher").ifBlank { target.teacher }
+        val newClassroom = args.stringArg("classroom").ifBlank { target.classroom }
+        val newDay = args.intArg("day_of_week") ?: target.dayOfWeek
+        val newStartSection = (args.intArg("start_section") ?: target.startSection).coerceIn(1, 20)
+        val newEndSection = (args.intArg("end_section") ?: target.endSection).coerceIn(newStartSection, 20)
+        val newStartWeek = (args.intArg("start_week") ?: target.startWeek).coerceIn(1, 30)
+        val newEndWeek = (args.intArg("end_week") ?: target.endWeek).coerceIn(newStartWeek, 30)
+        val newWeekType = when (args.stringArg("week_type").uppercase(Locale.ROOT)) {
+            "ODD", "1", "单周" -> WeekType.ODD
+            "EVEN", "2", "双周" -> WeekType.EVEN
+            "EVERY", "0", "每周" -> WeekType.EVERY
+            else -> target.weekType
+        }
+        val newRemark = args.stringArg("remark").ifBlank { target.remark }
+
+        val candidate = target.copy(
+            name = newName,
+            teacher = newTeacher,
+            classroom = newClassroom,
+            dayOfWeek = newDay,
+            startSection = newStartSection,
+            endSection = newEndSection,
+            startWeek = newStartWeek,
+            endWeek = newEndWeek,
+            weekType = newWeekType,
+            remark = newRemark,
+        )
+        CourseValidator.validate(candidate)?.let { msg -> return jsonError(msg) }
+
+        val payload = AssistantWritePayload.EditCourse(
+            courseId = target.id,
+            timetableId = currentTable.id,
+            name = newName,
+            teacher = newTeacher,
+            classroom = newClassroom,
+            dayOfWeek = newDay,
+            startSection = newStartSection,
+            endSection = newEndSection,
+            startWeek = newStartWeek,
+            endWeek = newEndWeek,
+            weekType = newWeekType,
+            remark = newRemark,
+        )
+        val summary = buildList {
+            add("课程：$newName")
+            add("时间：${weekdayLabel(newDay)} 第${newStartSection}-${newEndSection}节")
+            add("周次：第${newStartWeek}-${newEndWeek}周")
+            if (newClassroom.isNotEmpty()) add("地点：$newClassroom")
+            if (newTeacher.isNotEmpty()) add("教师：$newTeacher")
+        }
+        val actionId = UUID.randomUUID().toString()
+        pendingActions += AssistantPendingAction(
+            id = actionId,
+            title = "修改课程",
+            summaryLines = summary,
+            payload = payload,
+            status = AssistantActionStatus.PENDING,
+        )
+        return buildJsonObject {
+            put("status", "pending_confirmation")
+            put("actionId", actionId)
+            put("message", "已生成修改课程确认卡片，等待用户点击确认")
+        }.toString()
+    }
+
+    private suspend fun handleProposeDeleteCourse(
+        args: JsonObject,
+        pendingActions: MutableList<AssistantPendingAction>,
+    ): String {
+        val currentTable = timetableRepository.observeCurrent().first()
+            ?: return jsonError("当前没有可用课表")
+        val baseCourses = scheduleData.observeCourses(currentTable.id).first()
+            .filter { it.overrideOfId == 0L }
+        val courseId = args.intArg("course_id")?.toLong()
+        val courseName = args.stringArg("course_name")
+        val target = when {
+            courseId != null && courseId > 0L -> baseCourses.firstOrNull { it.id == courseId }
+            courseName.isNotEmpty() -> baseCourses.firstOrNull { it.name.contains(courseName, ignoreCase = true) }
+            else -> null
+        } ?: return jsonError("未在当前课表中找到要删除的课程")
+
+        val payload = AssistantWritePayload.DeleteCourse(
+            courseId = target.id,
+            timetableId = currentTable.id,
+            courseName = target.name,
+        )
+        val summary = buildList {
+            add("课程：${target.name}")
+            add("时间：${weekdayLabel(target.dayOfWeek)} 第${target.startSection}-${target.endSection}节")
+            if (target.classroom.isNotEmpty()) add("地点：${target.classroom}")
+        }
+        val actionId = UUID.randomUUID().toString()
+        pendingActions += AssistantPendingAction(
+            id = actionId,
+            title = "删除课程",
+            summaryLines = summary,
+            payload = payload,
+            status = AssistantActionStatus.PENDING,
+        )
+        return buildJsonObject {
+            put("status", "pending_confirmation")
+            put("actionId", actionId)
+            put("message", "已生成删除课程确认卡片，等待用户点击确认")
+        }.toString()
+    }
+
+    private suspend fun handleProposeEditExam(
+        args: JsonObject,
+        pendingActions: MutableList<AssistantPendingAction>,
+    ): String {
+        val exams = examRepository.observeAll().first()
+        val examId = args.intArg("exam_id")?.toLong()
+        val subjectQuery = args.stringArg("subject")
+        val target = when {
+            examId != null && examId > 0L -> exams.firstOrNull { it.id == examId }
+            subjectQuery.isNotEmpty() -> exams.firstOrNull { it.subject.contains(subjectQuery, ignoreCase = true) }
+            else -> null
+        } ?: return jsonError("未找到要修改的考试记录")
+
+        val newSubject = args.stringArg("new_subject").ifBlank { target.subject }
+        val newDate = args.stringArg("date").ifBlank { target.date }
+        val newStartTime = args.stringArg("start_time").ifBlank { target.startTime }
+        val newEndTime = args.stringArg("end_time").ifBlank { target.endTime }
+        val newLocation = args.stringArg("location").ifBlank { target.location }
+        val newSeat = args.stringArg("seat").ifBlank { target.seat }
+        val newNote = args.stringArg("note").ifBlank { target.note }
+
+        val candidate = target.copy(
+            subject = newSubject,
+            date = newDate,
+            startTime = newStartTime,
+            endTime = newEndTime,
+            location = newLocation,
+            seat = newSeat,
+            note = newNote,
+        )
+        ExamValidator.validate(candidate)?.let { msg -> return jsonError(msg) }
+
+        val payload = AssistantWritePayload.EditExam(
+            examId = target.id,
+            subject = newSubject,
+            date = newDate,
+            startTime = newStartTime,
+            endTime = newEndTime,
+            location = newLocation,
+            seat = newSeat,
+            note = newNote,
+        )
+        val summary = buildList {
+            add("科目：$newSubject")
+            val timePart = if (newStartTime.isNotEmpty() && newEndTime.isNotEmpty()) " $newStartTime-$newEndTime" else ""
+            add("时间：$newDate$timePart")
+            if (newLocation.isNotEmpty()) add("考场：$newLocation")
+            if (newSeat.isNotEmpty()) add("座位：$newSeat")
+        }
+        val actionId = UUID.randomUUID().toString()
+        pendingActions += AssistantPendingAction(
+            id = actionId,
+            title = "修改考试",
+            summaryLines = summary,
+            payload = payload,
+            status = AssistantActionStatus.PENDING,
+        )
+        return buildJsonObject {
+            put("status", "pending_confirmation")
+            put("actionId", actionId)
+            put("message", "已生成修改考试确认卡片，等待用户点击确认")
+        }.toString()
+    }
+
+    private suspend fun handleProposeDeleteExam(
+        args: JsonObject,
+        pendingActions: MutableList<AssistantPendingAction>,
+    ): String {
+        val exams = examRepository.observeAll().first()
+        val examId = args.intArg("exam_id")?.toLong()
+        val subjectQuery = args.stringArg("subject")
+        val target = when {
+            examId != null && examId > 0L -> exams.firstOrNull { it.id == examId }
+            subjectQuery.isNotEmpty() -> exams.firstOrNull { it.subject.contains(subjectQuery, ignoreCase = true) }
+            else -> null
+        } ?: return jsonError("未找到要删除的考试记录")
+
+        val payload = AssistantWritePayload.DeleteExam(
+            examId = target.id,
+            subject = target.subject,
+        )
+        val summary = buildList {
+            add("科目：${target.subject}")
+            add("日期：${target.date}")
+            if (target.location.isNotEmpty()) add("考场：${target.location}")
+        }
+        val actionId = UUID.randomUUID().toString()
+        pendingActions += AssistantPendingAction(
+            id = actionId,
+            title = "删除考试",
+            summaryLines = summary,
+            payload = payload,
+            status = AssistantActionStatus.PENDING,
+        )
+        return buildJsonObject {
+            put("status", "pending_confirmation")
+            put("actionId", actionId)
+            put("message", "已生成删除考试确认卡片，等待用户点击确认")
+        }.toString()
+    }
+
     private suspend fun resolveGradeConnection(): SchoolConnection? {
         val active = schoolAuth.observeActiveConnection().first()
         if (active != null && active.status != SchoolConnectionStatus.LOGGED_OUT) return active
@@ -1020,6 +1408,18 @@ class DefaultCampusAiAssistant @Inject constructor(
                 """.trimIndent(),
             ),
             AiToolDefinition(
+                name = "get_credit_progress",
+                description = "查询本机已修学分进度、总目标/剩余学分及各分类（如通识选修、专业必修等）学分完成情况。",
+                parametersSchemaJson = """
+                    {
+                      "type": "object",
+                      "properties": {
+                        "category": {"type": "string", "description": "可选分类名称关键词，留空返回全部分类"}
+                      }
+                    }
+                """.trimIndent(),
+            ),
+            AiToolDefinition(
                 name = "get_upcoming_exams",
                 description = "查询近期考试安排、考场、座位号和倒计时天数。",
                 parametersSchemaJson = """
@@ -1112,6 +1512,75 @@ class DefaultCampusAiAssistant @Inject constructor(
                     }
                 """.trimIndent(),
             ),
+            AiToolDefinition(
+                name = "propose_edit_course",
+                description = "生成一条修改已有课程定义的确认卡片（需先用 search_courses 查到课程，不会直接写入）。",
+                parametersSchemaJson = """
+                    {
+                      "type": "object",
+                      "properties": {
+                        "course_id": {"type": "integer"},
+                        "course_name": {"type": "string"},
+                        "new_name": {"type": "string"},
+                        "teacher": {"type": "string"},
+                        "classroom": {"type": "string"},
+                        "day_of_week": {"type": "integer"},
+                        "start_section": {"type": "integer"},
+                        "end_section": {"type": "integer"},
+                        "start_week": {"type": "integer"},
+                        "end_week": {"type": "integer"},
+                        "week_type": {"type": "string"},
+                        "remark": {"type": "string"}
+                      }
+                    }
+                """.trimIndent(),
+            ),
+            AiToolDefinition(
+                name = "propose_delete_course",
+                description = "生成一条删除已有课程的确认卡片（需用户确认）。",
+                parametersSchemaJson = """
+                    {
+                      "type": "object",
+                      "properties": {
+                        "course_id": {"type": "integer"},
+                        "course_name": {"type": "string"}
+                      }
+                    }
+                """.trimIndent(),
+            ),
+            AiToolDefinition(
+                name = "propose_edit_exam",
+                description = "生成一条修改已有考试安排的确认卡片（需先用 get_upcoming_exams 获取考试 id 或科目）。",
+                parametersSchemaJson = """
+                    {
+                      "type": "object",
+                      "properties": {
+                        "exam_id": {"type": "integer"},
+                        "subject": {"type": "string"},
+                        "new_subject": {"type": "string"},
+                        "date": {"type": "string"},
+                        "start_time": {"type": "string"},
+                        "end_time": {"type": "string"},
+                        "location": {"type": "string"},
+                        "seat": {"type": "string"},
+                        "note": {"type": "string"}
+                      }
+                    }
+                """.trimIndent(),
+            ),
+            AiToolDefinition(
+                name = "propose_delete_exam",
+                description = "生成一条删除已有考试的确认卡片（需用户确认）。",
+                parametersSchemaJson = """
+                    {
+                      "type": "object",
+                      "properties": {
+                        "exam_id": {"type": "integer"},
+                        "subject": {"type": "string"}
+                      }
+                    }
+                """.trimIndent(),
+            ),
         )
 
         private fun toolProgressLabel(name: String): String = when (name) {
@@ -1119,11 +1588,16 @@ class DefaultCampusAiAssistant @Inject constructor(
             "search_courses" -> "已检索课程"
             "get_grades_summary" -> "已查成绩"
             "simulate_gpa" -> "已计算 GPA"
+            "get_credit_progress" -> "已查学分进度"
             "get_upcoming_exams" -> "已查考试"
             "find_free_classrooms" -> "已查空教室"
             "propose_add_course" -> "待确认加课"
+            "propose_edit_course" -> "待确认改课"
+            "propose_delete_course" -> "待确认删课"
             "propose_adjust_course" -> "待确认调课"
             "propose_add_exam" -> "待确认加考试"
+            "propose_edit_exam" -> "待确认改考试"
+            "propose_delete_exam" -> "待确认删考试"
             else -> name
         }
 

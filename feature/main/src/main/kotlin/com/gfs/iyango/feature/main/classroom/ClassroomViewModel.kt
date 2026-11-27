@@ -1,5 +1,6 @@
 package com.gfs.iyango.feature.main.classroom
 
+import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.gfs.iyango.core.domain.ActiveSlotResolution
@@ -10,6 +11,7 @@ import com.gfs.iyango.core.domain.ClassroomRepositoryPort
 import com.gfs.iyango.core.domain.ClassroomRoomProjection
 import com.gfs.iyango.core.domain.OrderedBuilding
 import com.gfs.iyango.core.domain.SchoolAuthPort
+import com.gfs.iyango.core.domain.TimetableComparisonCalculator
 import com.gfs.iyango.core.model.AppPreferences
 import com.gfs.iyango.core.model.CalendarSettings
 import com.gfs.iyango.core.model.ClassroomBuilding
@@ -139,7 +141,13 @@ class ClassroomViewModel @Inject constructor(
     private val repository: ClassroomRepositoryPort,
     private val appSettings: AppSettingsPort = NoopClassroomAppSettingsPort,
     private val clock: Clock = Clock.systemDefaultZone(),
+    savedStateHandle: SavedStateHandle = SavedStateHandle(),
 ) : ViewModel() {
+
+    private var prefillWeek: Int = savedStateHandle.get<Int>("prefillWeek")?.takeIf { it in 1..60 } ?: 0
+    private var prefillDay: Int = savedStateHandle.get<Int>("prefillDay")?.takeIf { it in 1..7 } ?: 0
+    private var prefillStartSection: Int = savedStateHandle.get<Int>("prefillStartSection")?.takeIf { it in 1..20 } ?: 0
+    private var prefillEndSection: Int = savedStateHandle.get<Int>("prefillEndSection")?.takeIf { it >= prefillStartSection } ?: prefillStartSection
 
     private val _state = MutableStateFlow(ClassroomUiState())
     val state: StateFlow<ClassroomUiState> = _state.asStateFlow()
@@ -872,8 +880,25 @@ class ClassroomViewModel @Inject constructor(
         val timeMode = pick(metadata.timeModes)
         val campus = pick(metadata.campuses)
         val roomType = pick(metadata.roomTypes)
-        val week = weekDefault(metadata)
-        val day = dayDefault(metadata)
+        val week = prefillWeek.takeIf { w ->
+            w in 1..60 && metadata.weeks.any { weekOf(it.value) == w }
+        } ?: weekDefault(metadata)
+        val day = prefillDay.takeIf { d ->
+            d in 1..7 && metadata.days.any { it.value.toIntOrNull() == d }
+        } ?: dayDefault(metadata)
+        val sectionCode = if (prefillStartSection > 0) {
+            TimetableComparisonCalculator.matchClassroomSectionOption(
+                options = metadata.sections,
+                startSection = prefillStartSection,
+                endSection = prefillEndSection,
+            )
+        } else {
+            ""
+        }
+        prefillWeek = 0
+        prefillDay = 0
+        prefillStartSection = 0
+        prefillEndSection = 0
         return ClassroomQuery(
             termValue = term,
             timeModeId = timeMode,
@@ -882,7 +907,7 @@ class ClassroomViewModel @Inject constructor(
             roomType = roomType,
             week = week,
             dayOfWeek = day,
-            sectionCode = "",
+            sectionCode = sectionCode,
             allSectionCodes = metadata.sections.map { it.value },
         )
     }

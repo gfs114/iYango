@@ -32,8 +32,38 @@
 
     <shortcut
         android:enabled="true"
+        android:icon="@drawable/ic_shortcut_classroom"
+        android:shortcutId="shortcut_3_classroom"
+        android:shortcutLongLabel="@string/shortcut_classroom_long"
+        android:shortcutShortLabel="@string/shortcut_classroom_short">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:data="iyango://open/classroom">
+            <categories>
+                <category android:name="android.intent.category.DEFAULT" />
+            </categories>
+        </intent>
+    </shortcut>
+
+    <shortcut
+        android:enabled="true"
+        android:icon="@drawable/ic_shortcut_grades"
+        android:shortcutId="shortcut_4_grades"
+        android:shortcutLongLabel="@string/shortcut_grades_long"
+        android:shortcutShortLabel="@string/shortcut_grades_short">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:data="iyango://open/grades">
+            <categories>
+                <category android:name="android.intent.category.DEFAULT" />
+            </categories>
+        </intent>
+    </shortcut>
+
+    <shortcut
+        android:enabled="true"
         android:icon="@drawable/ic_shortcut_mine"
-        android:shortcutId="shortcut_3_mine"
+        android:shortcutId="shortcut_5_mine"
         android:shortcutLongLabel="@string/shortcut_mine_long"
         android:shortcutShortLabel="@string/shortcut_mine_short">
         <intent

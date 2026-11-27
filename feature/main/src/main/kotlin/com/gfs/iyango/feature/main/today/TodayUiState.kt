@@ -1,6 +1,7 @@
 package com.gfs.iyango.feature.main.today
 
 import com.gfs.iyango.core.domain.CourseOccurrence
+import com.gfs.iyango.core.domain.HolidayDayInfo
 import com.gfs.iyango.core.model.Course
 import com.gfs.iyango.core.model.Exam
 import com.gfs.iyango.core.model.Semester
@@ -47,6 +48,8 @@ sealed interface TodayUiState {
         val connection: SchoolConnection? = null,
         val now: java.time.LocalDateTime = today.atStartOfDay(),
         val timing: com.gfs.iyango.core.domain.TodayCourseTiming = com.gfs.iyango.core.domain.TodayCourseTiming.project(todayRows.map { it.occurrence }, now),
+        val todayHoliday: HolidayDayInfo? = null,
+        val isTemporaryDay: Boolean = false,
     ) : TodayUiState {
 
         /** 详情弹层的展示周（供单次调整默认值）。 */

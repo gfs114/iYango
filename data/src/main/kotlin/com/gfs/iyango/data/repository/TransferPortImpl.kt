@@ -112,9 +112,11 @@ class DataStoreThemeSettings internal constructor(
             accentHex = prefs[Keys.ACCENT],
             tintBackground = prefs[Keys.TINT] ?: false,
             themeMode = ThemeMode.fromCode(prefs[Keys.THEME_MODE] ?: 0),
-            // 蒙层兜底默认值与 ThemeSettings 默认同步（亮/暗均 0 = 无蒙层，纯折射玻璃）。
-            dockSurfaceAlphaLight = (prefs[Keys.DOCK_ALPHA_LIGHT] ?: 0f).coerceIn(0f, 0.8f),
-            dockSurfaceAlphaDark = (prefs[Keys.DOCK_ALPHA_DARK] ?: 0f).coerceIn(0f, 0.8f),
+            // 蒙层兜底默认值与 ThemeSettings 默认同步（标准 Apple 液态玻璃亮 0.40 / 暗 0.36）。
+            dockSurfaceAlphaLight = (prefs[Keys.DOCK_ALPHA_LIGHT] ?: ThemeSettings.DEFAULT_DOCK_SURFACE_ALPHA_LIGHT)
+                .coerceIn(0f, 0.8f),
+            dockSurfaceAlphaDark = (prefs[Keys.DOCK_ALPHA_DARK] ?: ThemeSettings.DEFAULT_DOCK_SURFACE_ALPHA_DARK)
+                .coerceIn(0f, 0.8f),
             dockGlass = DockGlassSettings(
                 blurDp = prefs[Keys.DOCK_GLASS_BLUR_DP] ?: defaults.blurDp,
                 lensWidthDp = prefs[Keys.DOCK_GLASS_LENS_WIDTH_DP] ?: defaults.lensWidthDp,

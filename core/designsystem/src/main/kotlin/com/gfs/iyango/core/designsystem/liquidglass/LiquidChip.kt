@@ -28,8 +28,6 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import com.kyant.backdrop.drawBackdrop
-import com.kyant.backdrop.effects.blur
-import com.kyant.backdrop.effects.lens
 import com.kyant.backdrop.highlight.Highlight
 import com.kyant.backdrop.highlight.HighlightStyle
 import com.kyant.shapes.Capsule
@@ -166,17 +164,14 @@ fun LiquidFilterChip(
                 effects = {
                     // 仅在绘制阶段按需启用模糊与折射：静止滚动时不挂载 RenderEffect，且绝不在组合阶段切换节点导致点击手势中断。
                     if (highlight.pressProgress > 0.01f) {
-                        if (spec.blurDp > 0.01f) {
-                            blur(spec.blurDp.dp.toPx())
-                        }
-                        if (canRefract && spec.lensWidthDp > 0.01f && spec.lensHeightDp > 0.01f) {
-                            lens(
-                                refractionHeight = (spec.lensWidthDp * 0.5f).dp.toPx(),
-                                refractionAmount = (spec.lensHeightDp * 0.5f).dp.toPx(),
-                                depthEffect = spec.depthEffect,
-                                chromaticAberration = spec.chromaticAberration,
-                            )
-                        }
+                        applyGlassEffects(
+                            blurDp = spec.blurDp,
+                            lensWidthDp = spec.lensWidthDp * 0.5f,
+                            lensHeightDp = spec.lensHeightDp * 0.5f,
+                            canRefract = canRefract,
+                            depthEffect = spec.depthEffect,
+                            chromaticAberration = spec.chromaticAberration,
+                        )
                     }
                 },
                 highlight = { highlightSpec },

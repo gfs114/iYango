@@ -222,8 +222,12 @@ private fun ScheduleGridBody(
     onDrop: (ScheduleDropSlot?) -> Unit = {},
     onDragCancel: () -> Unit = {},
 ) {
-    val axis = ScheduleAxisGeometry(metrics.sectionCount, metrics.sectionHeight,
-        if (display.showLunchBreak) data.lunchBoundary() else null)
+    val axis = ScheduleAxisGeometry(
+        sectionCount = metrics.sectionCount,
+        rowHeight = metrics.sectionHeight,
+        lunchAfter = if (display.showLunchBreak) data.lunchBoundary() else null,
+        eveningAfter = if (display.showEveningBreak) data.eveningBoundary() else null,
+    )
     val exams = if (display.showExams) data.exams else emptyList()
     var examDay by remember(data.timetableId, data.displayedWeek) { mutableStateOf<Int?>(null) }
     val examWidth: (Int) -> Float = { day -> if (exams.any { it.date.dayOfWeek.value == day && it.topRow != null })
@@ -374,12 +378,12 @@ private fun ScheduleGridBody(
                                 strokeWidth = strokePx,
                                 pathEffect = pathEffect,
                             )
-                            if (axis.lunchAfter == s) {
-                                val afterLunchY = axis.sectionTop(s + 1).dp.toPx()
+                            if (axis.lunchAfter == s || axis.eveningAfter == s) {
+                                val afterBreakY = axis.sectionTop(s + 1).dp.toPx()
                                 drawLine(
                                     color = gridColor,
-                                    start = Offset(railPx, afterLunchY),
-                                    end = Offset(endX, afterLunchY),
+                                    start = Offset(railPx, afterBreakY),
+                                    end = Offset(endX, afterBreakY),
                                     strokeWidth = strokePx,
                                     pathEffect = pathEffect,
                                 )
@@ -401,6 +405,16 @@ private fun ScheduleGridBody(
                     Text("午休", fontSize = 10.sp, textAlign = TextAlign.Center,
                         modifier = Modifier.offset(x=metrics.railWidth.dp,y=axis.sectionBottom(after).dp)
                             .size(metrics.dayAreaWidth.dp,axis.lunchHeight.dp))
+                }
+                axis.eveningAfter?.takeIf { it in 1 until axis.sectionCount && it != axis.lunchAfter }?.let { after ->
+                    Text(
+                        "晚休",
+                        fontSize = 10.sp,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier
+                            .offset(x = metrics.railWidth.dp, y = axis.sectionBottom(after).dp)
+                            .size(metrics.dayAreaWidth.dp, axis.eveningHeight.dp),
+                    )
                 }
                 TimeRailColumn(rows = data.displayRail(metrics.visibleDayCount), metrics = metrics, axis = axis)
                 // [自适应高度] 每块下方同一天连续空闲的节数：教室文字放不下时块可以向下
@@ -517,15 +531,41 @@ private fun WeekDayHeader(
                     },
                 )
                 val date = data.weekStart.plusDays((day - 1).toLong())
-                Text(
-                    text = if (!data.datesKnown) "" else if (display.headerOrder == com.gfs.iyango.core.model.ScheduleHeaderOrder.WEEKDAY_DATE) "${date.monthValue}/${date.dayOfMonth}" else DayLabels.shortLabel(day),
-                    fontSize = (display.headerTextSizeSp - 3f).coerceAtLeast(8f).sp,
-                    lineHeight = ((display.headerTextSizeSp - 3f).coerceAtLeast(8f) * 1.25f).sp,
-                    style = CompactGridTextStyle,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    color = textTertiaryColor(),
-                )
+                val holiday = if (data.datesKnown) data.holidays[date] else null
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(2.dp),
+                ) {
+                    Text(
+                        text = if (!data.datesKnown) "" else if (display.headerOrder == com.gfs.iyango.core.model.ScheduleHeaderOrder.WEEKDAY_DATE) "${date.monthValue}/${date.dayOfMonth}" else DayLabels.shortLabel(day),
+                        fontSize = (display.headerTextSizeSp - 3f).coerceAtLeast(8f).sp,
+                        lineHeight = ((display.headerTextSizeSp - 3f).coerceAtLeast(8f) * 1.25f).sp,
+                        style = CompactGridTextStyle,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        color = textTertiaryColor(),
+                    )
+                    if (holiday != null) {
+                        val badgeColor = if (holiday.isOffDay) {
+                            Color(0xFF16A34A)
+                        } else {
+                            Color(0xFFD97706)
+                        }
+                        Surface(
+                            shape = RoundedCornerShape(4.dp),
+                            color = badgeColor.copy(alpha = 0.16f),
+                        ) {
+                            Text(
+                                text = if (holiday.isOffDay) "假" else "调",
+                                fontSize = 8.sp,
+                                lineHeight = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = badgeColor,
+                                modifier = Modifier.padding(horizontal = 3.dp, vertical = 1.dp),
+                            )
+                        }
+                    }
+                }
             }
         }
     }

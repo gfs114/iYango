@@ -31,8 +31,6 @@ import androidx.compose.ui.graphics.isSpecified
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import com.kyant.backdrop.drawBackdrop
-import com.kyant.backdrop.effects.blur
-import com.kyant.backdrop.effects.lens
 import com.kyant.backdrop.highlight.Highlight
 import com.kyant.backdrop.highlight.HighlightStyle
 import com.kyant.shapes.Capsule
@@ -239,17 +237,14 @@ private fun LiquidButtonImpl(
                 backdrop = backdrop,
                 shape = shapeProvider,
                 effects = {
-                    if (spec.blurDp > 0.01f) {
-                        blur(spec.blurDp.dp.toPx())
-                    }
-                    if (canRefract && spec.lensWidthDp > 0.01f && spec.lensHeightDp > 0.01f) {
-                        lens(
-                            refractionHeight = spec.lensWidthDp.dp.toPx(),
-                            refractionAmount = spec.lensHeightDp.dp.toPx(),
-                            depthEffect = spec.depthEffect,
-                            chromaticAberration = spec.chromaticAberration,
-                        )
-                    }
+                    applyGlassEffects(
+                        blurDp = spec.blurDp,
+                        lensWidthDp = spec.lensWidthDp,
+                        lensHeightDp = spec.lensHeightDp,
+                        canRefract = canRefract,
+                        depthEffect = spec.depthEffect,
+                        chromaticAberration = spec.chromaticAberration,
+                    )
                 },
                 highlight = { highlightSpec },
                 layerBlock = if (enabled) pressLayerBlock else null,

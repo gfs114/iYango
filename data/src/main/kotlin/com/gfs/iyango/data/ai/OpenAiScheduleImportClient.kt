@@ -50,6 +50,16 @@ internal fun interface AiHeaderGetTransport {
     suspend fun get(url: String, headers: Map<String, String>): AiHttpResponse
 }
 
+internal fun interface AiHeaderStreamTransport {
+    suspend fun streamPost(
+        url: String,
+        headers: Map<String, String>,
+        bodyJson: String,
+        protocol: AiApiProtocol,
+        onTextDelta: (String) -> Unit,
+    ): AiChatTurnResult
+}
+
 /**
  * BYOK 多协议 AI 客户端（OpenAI Chat / OpenAI Responses / Anthropic Messages）。
  *
@@ -62,6 +72,7 @@ class OpenAiScheduleImportClient internal constructor(
     private val clock: Clock,
     private val headerPostTransport: AiHeaderPostTransport,
     private val headerGetTransport: AiHeaderGetTransport,
+    private val headerStreamTransport: AiHeaderStreamTransport? = null,
 ) : AiScheduleImportPort, AiChatPort {
 
     internal constructor(
@@ -95,6 +106,9 @@ class OpenAiScheduleImportClient internal constructor(
         clock = clock,
         headerPostTransport = AiHeaderPostTransport(::defaultPost),
         headerGetTransport = AiHeaderGetTransport(::defaultGet),
+        headerStreamTransport = AiHeaderStreamTransport { url, headers, body, protocol, onTextDelta ->
+            defaultStreamPost(url, headers, body, protocol, onTextDelta)
+        },
     )
 
     override suspend fun parseSchedule(
@@ -199,6 +213,62 @@ class OpenAiScheduleImportClient internal constructor(
                 message = "protocol=${config.protocol.shortLabel} tools=${parsed.toolCalls.size}",
             )
             parsed
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (error: Exception) {
+            val msg = sanitizeError(error.message ?: "网络请求失败", apiKey)
+            recordDiagnostic("ai_chat", "FAILED", error.javaClass.simpleName, startedAt, msg)
+            AiChatTurnResult.Failed(msg)
+        }
+    }
+
+    override suspend fun streamTurn(
+        config: AiProviderConfig,
+        systemPrompt: String,
+        messages: List<AiChatMessage>,
+        tools: List<AiToolDefinition>,
+        onTextDelta: (String) -> Unit,
+    ): AiChatTurnResult = withContext(Dispatchers.IO) {
+        val streamTransport = headerStreamTransport
+        if (streamTransport == null) {
+            return@withContext super.streamTurn(config, systemPrompt, messages, tools, onTextDelta)
+        }
+        val apiKey = config.apiKey.trim()
+        val model = config.model.trim()
+        if (apiKey.isEmpty() || model.isEmpty()) {
+            return@withContext AiChatTurnResult.Failed("请先完整配置 AI 接口与 API Key")
+        }
+        val url = resolveEndpointUrl(config.baseUrl, config.protocol).getOrElse { error ->
+            return@withContext AiChatTurnResult.Failed(error.message ?: "接口地址无效")
+        }
+        val headers = buildAuthHeaders(config.protocol, apiKey) + mapOf("Accept" to "text/event-stream")
+        val body = buildChatTurnRequestJson(
+            protocol = config.protocol,
+            model = model,
+            systemPrompt = systemPrompt,
+            messages = messages,
+            tools = tools,
+            stream = true,
+        )
+        val startedAt = clock.millis()
+        try {
+            when (val result = streamTransport.streamPost(url, headers, body, config.protocol, onTextDelta)) {
+                is AiChatTurnResult.Reply -> {
+                    recordDiagnostic(
+                        category = "ai_chat",
+                        outcome = "SUCCESS",
+                        errorType = "",
+                        startedAt = startedAt,
+                        message = "stream protocol=${config.protocol.shortLabel} tools=${result.toolCalls.size}",
+                    )
+                    result
+                }
+                is AiChatTurnResult.Failed -> {
+                    val sanitized = sanitizeError(result.message, apiKey)
+                    recordDiagnostic("ai_chat", "FAILED", "StreamFailed", startedAt, sanitized)
+                    AiChatTurnResult.Failed(sanitized)
+                }
+            }
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (error: Exception) {
@@ -433,6 +503,77 @@ class OpenAiScheduleImportClient internal constructor(
             headers.forEach { (name, value) -> builder.header(name, value) }
             val request = builder.get().build()
             return executeHttpRequest(request)
+        }
+
+        private suspend fun defaultStreamPost(
+            url: String,
+            headers: Map<String, String>,
+            bodyJson: String,
+            protocol: AiApiProtocol,
+            onTextDelta: (String) -> Unit,
+        ): AiChatTurnResult = suspendCancellableCoroutine { continuation ->
+            val builder = Request.Builder().url(url)
+            headers.forEach { (name, value) -> builder.header(name, value) }
+            val request = builder
+                .post(bodyJson.toRequestBody(JSON_MEDIA_TYPE))
+                .build()
+            val call = httpClient.newCall(request)
+            continuation.invokeOnCancellation { call.cancel() }
+            call.enqueue(object : Callback {
+                override fun onFailure(call: Call, e: IOException) {
+                    if (continuation.isActive) {
+                        continuation.resumeWithException(e)
+                    }
+                }
+
+                override fun onResponse(call: Call, response: Response) {
+                    response.use { res ->
+                        if (!res.isSuccessful) {
+                            val errText = runCatching { readBoundedUtf8(res) }.getOrDefault("")
+                            val apiKey = headers["x-api-key"]
+                                ?: headers["Authorization"]?.removePrefix("Bearer ")
+                                ?: ""
+                            if (continuation.isActive) {
+                                continuation.resume(AiChatTurnResult.Failed(mapHttpError(res.code, errText, apiKey)))
+                            }
+                            return
+                        }
+                        val contentType = res.header("Content-Type").orEmpty()
+                        if (!contentType.contains("text/event-stream", ignoreCase = true)) {
+                            val fullBody = readBoundedUtf8(res)
+                            val parsed = parseChatTurnResponse(protocol, fullBody)
+                            if (parsed == null) {
+                                if (continuation.isActive) {
+                                    continuation.resume(AiChatTurnResult.Failed("模型未返回有效内容，请重试"))
+                                }
+                                return
+                            }
+                            if (parsed.text.isNotEmpty() && continuation.isActive) {
+                                onTextDelta(parsed.text)
+                            }
+                            if (continuation.isActive) {
+                                continuation.resume(parsed)
+                            }
+                            return
+                        }
+                        val parsed = res.body.charStream().use { reader ->
+                            AiSseAccumulator.consumeSseReader(
+                                reader = reader,
+                                protocol = protocol,
+                                isActive = { continuation.isActive },
+                                onTextDelta = onTextDelta,
+                            )
+                        }
+                        if (continuation.isActive) {
+                            if (parsed != null) {
+                                continuation.resume(parsed)
+                            } else {
+                                continuation.resume(AiChatTurnResult.Failed("模型未返回有效内容，请重试"))
+                            }
+                        }
+                    }
+                }
+            })
         }
 
         private suspend fun executeHttpRequest(request: Request): AiHttpResponse =

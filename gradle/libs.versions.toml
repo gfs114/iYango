@@ -27,6 +27,8 @@ robolectric = "4.17"
 turbine = "1.2.1"
 # Kyant0/AndroidLiquidGlass（Backdrop 库，2.x）：液态玻璃材质，底部导航使用。
 backdrop = "2.0.1"
+zxingCore = "3.5.3"
+camerax = "1.4.2"
 
 [libraries]
 # AndroidX 基础
@@ -76,6 +78,13 @@ jsoup = { group = "org.jsoup", name = "jsoup", version.ref = "jsoup" }
 kotlinx-coroutines-core = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-core", version.ref = "coroutines" }
 kotlinx-coroutines-test = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-test", version.ref = "coroutines" }
 kotlinx-serialization-json = { group = "org.jetbrains.kotlinx", name = "kotlinx-serialization-json", version.ref = "serializationJson" }
+
+# 离线二维码解析与扫码相机
+zxing-core = { group = "com.google.zxing", name = "core", version.ref = "zxingCore" }
+androidx-camera-core = { group = "androidx.camera", name = "camera-core", version.ref = "camerax" }
+androidx-camera-camera2 = { group = "androidx.camera", name = "camera-camera2", version.ref = "camerax" }
+androidx-camera-lifecycle = { group = "androidx.camera", name = "camera-lifecycle", version.ref = "camerax" }
+androidx-camera-view = { group = "androidx.camera", name = "camera-view", version.ref = "camerax" }
 
 # 测试
 junit = { group = "junit", name = "junit", version.ref = "junit" }

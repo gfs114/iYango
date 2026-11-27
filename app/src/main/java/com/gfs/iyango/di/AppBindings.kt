@@ -3,12 +3,16 @@ package com.gfs.iyango.di
 import android.content.Context
 import android.content.pm.ApplicationInfo
 import com.gfs.iyango.core.domain.AdjustmentRepositoryPort
+import com.gfs.iyango.core.domain.AiChatHistoryPort
 import com.gfs.iyango.core.domain.AiChatPort
 import com.gfs.iyango.core.domain.AiConfigStorePort
 import com.gfs.iyango.core.domain.AiScheduleImportPort
 import com.gfs.iyango.core.domain.AppSettingsPort
 import com.gfs.iyango.core.domain.AppUpdatePort
+import com.gfs.iyango.core.domain.AutoSilentCoordinatorPort
+import com.gfs.iyango.core.domain.AutoSilentPlatformPort
 import com.gfs.iyango.core.domain.BingWallpaperPort
+import com.gfs.iyango.core.domain.HolidayRepositoryPort
 import com.gfs.iyango.core.domain.CalendarCoordinatorPort
 import com.gfs.iyango.core.domain.CalendarPlatformPort
 import com.gfs.iyango.core.domain.CampusAiAssistantPort
@@ -41,8 +45,11 @@ import com.gfs.iyango.core.domain.SystemMappingPort
 import com.gfs.iyango.core.domain.ThemeSettingsPort
 import com.gfs.iyango.core.domain.TimetableRepositoryPort
 import com.gfs.iyango.core.domain.WallpaperStore
+import com.gfs.iyango.core.domain.WebDavCredentialStore
+import com.gfs.iyango.core.domain.WebDavSyncPort
 import com.gfs.iyango.core.domain.WidgetConfigPort
 import com.gfs.iyango.platform.android.AndroidAiCredentialStore
+import com.gfs.iyango.platform.android.AndroidAutoSilentPlatform
 import com.gfs.iyango.platform.android.AndroidCalendarPlatform
 import com.gfs.iyango.platform.android.AndroidCustomFontStore
 import com.gfs.iyango.platform.android.AndroidGradeCheckScheduler
@@ -50,6 +57,7 @@ import com.gfs.iyango.platform.android.AndroidGradeNotificationPlatform
 import com.gfs.iyango.platform.android.AndroidReminderPlatform
 import com.gfs.iyango.platform.android.AndroidSchoolCredentialStore
 import com.gfs.iyango.platform.android.AndroidWallpaperStore
+import com.gfs.iyango.platform.android.AndroidWebDavCredentialStore
 import com.gfs.iyango.data.ai.DefaultCampusAiAssistant
 import com.gfs.iyango.data.ai.OpenAiScheduleImportClient
 import com.gfs.iyango.data.db.IYangoDatabase
@@ -57,17 +65,21 @@ import com.gfs.iyango.data.update.HttpAppUpdateRepository
 import com.gfs.iyango.data.repository.AppRefreshCoordinator
 import com.gfs.iyango.data.repository.DataStoreAppSettings
 import com.gfs.iyango.data.repository.DataStoreThemeSettings
+import com.gfs.iyango.data.repository.DefaultAutoSilentCoordinator
 import com.gfs.iyango.data.repository.DefaultCalendarCoordinator
 import com.gfs.iyango.data.repository.DefaultGradeMonitorCoordinator
+import com.gfs.iyango.data.repository.DefaultHolidayRepository
 import com.gfs.iyango.data.repository.DefaultReminderCoordinator
 import com.gfs.iyango.data.repository.DefaultSettingsBackup
 import com.gfs.iyango.data.repository.FileCourseRawStore
 import com.gfs.iyango.data.repository.FileTermBrowseCache
 import com.gfs.iyango.data.repository.FileDiagnosticLog
 import com.gfs.iyango.data.repository.HttpBingWallpaperRepository
+import com.gfs.iyango.data.repository.HttpWebDavSyncRepository
 import com.gfs.iyango.data.repository.YguGradeQueryRepository
 import com.gfs.iyango.data.repository.IYangoDatabaseProvider
 import com.gfs.iyango.data.repository.RoomAdjustmentRepository
+import com.gfs.iyango.data.repository.RoomAiChatHistoryRepository
 import com.gfs.iyango.data.repository.RoomClassroomRepository
 import com.gfs.iyango.data.repository.RoomCreditProgressRepository
 import com.gfs.iyango.data.repository.RoomEffectiveSchedule
@@ -280,6 +292,11 @@ abstract class AppBindings {
     @Singleton
     abstract fun bindCampusAiAssistantPort(impl: DefaultCampusAiAssistant): CampusAiAssistantPort
 
+    /** AI 助理多会话与消息历史持久化端口 → Room 实现。 */
+    @Binds
+    @Singleton
+    abstract fun bindAiChatHistoryPort(impl: RoomAiChatHistoryRepository): AiChatHistoryPort
+
     /** 应用更新自动/手动检测端口。 */
     @Binds
     @Singleton
@@ -306,6 +323,26 @@ abstract class AppBindings {
     @Binds
     @Singleton
     abstract fun bindGradeMonitorCoordinatorPort(impl: DefaultGradeMonitorCoordinator): GradeMonitorCoordinatorPort
+
+    @Binds
+    @Singleton
+    abstract fun bindHolidayRepositoryPort(impl: DefaultHolidayRepository): HolidayRepositoryPort
+
+    @Binds
+    @Singleton
+    abstract fun bindAutoSilentPlatformPort(impl: AndroidAutoSilentPlatform): AutoSilentPlatformPort
+
+    @Binds
+    @Singleton
+    abstract fun bindAutoSilentCoordinatorPort(impl: DefaultAutoSilentCoordinator): AutoSilentCoordinatorPort
+
+    @Binds
+    @Singleton
+    abstract fun bindWebDavCredentialStore(impl: AndroidWebDavCredentialStore): WebDavCredentialStore
+
+    @Binds
+    @Singleton
+    abstract fun bindWebDavSyncPort(impl: HttpWebDavSyncRepository): WebDavSyncPort
 
     companion object {
 

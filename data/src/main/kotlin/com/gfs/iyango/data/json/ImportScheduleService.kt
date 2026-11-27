@@ -124,7 +124,25 @@ class ImportScheduleService @Inject constructor(
         if (bytes.size > maxFileBytes) {
             throw IllegalArgumentException("文件超过 5MB 上限，无法导入")
         }
-        val parsed = ScheduleJsonParser.parse(bytes.toString(Charsets.UTF_8))
+        val text = bytes.toString(Charsets.UTF_8).removePrefix("\uFEFF")
+        val trimmed = text.trim()
+        val parsed = when {
+            trimmed.contains("BEGIN:VCALENDAR", ignoreCase = true) -> {
+                IcsScheduleParser.parse(text)
+            }
+            looksLikeWakeUp(trimmed) -> {
+                WakeUpScheduleParser.parseWakeUpFile(text)
+            }
+            trimmed.startsWith("{") || trimmed.startsWith("[") -> {
+                ScheduleJsonParser.parse(text)
+            }
+            trimmed.contains(',') -> {
+                WakeUpScheduleParser.parseCsv(bytes)
+            }
+            else -> {
+                ScheduleJsonParser.parse(text)
+            }
+        }
         val document = parsed.document
             ?: return ImportReadResult.Failed(
                 parsed.issues.firstOrNull()?.message ?: "文件内容无法解析",
@@ -147,6 +165,15 @@ class ImportScheduleService @Inject constructor(
                 document = document,
             ),
         )
+    }
+
+    private fun looksLikeWakeUp(trimmed: String): Boolean {
+        val lines = trimmed.split(Regex("\r?\n")).map { it.trim() }.filter { it.isNotEmpty() }
+        if (lines.size < 5) return false
+        return lines[0].startsWith("[") &&
+            lines[1].startsWith("{") &&
+            lines[3].startsWith("[") &&
+            lines[4].startsWith("[")
     }
 
     /**

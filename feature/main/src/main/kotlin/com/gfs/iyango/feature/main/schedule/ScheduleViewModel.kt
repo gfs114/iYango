@@ -7,10 +7,15 @@ import com.gfs.iyango.core.domain.AdjustmentReplaceResult
 import com.gfs.iyango.core.domain.AdjustmentRepositoryPort
 import com.gfs.iyango.core.domain.AppSettingsPort
 import com.gfs.iyango.core.domain.ApplyTemporaryDay
+import com.gfs.iyango.core.domain.AutoSilentCoordinatorPort
 import com.gfs.iyango.core.domain.CancelOccurrence
 import com.gfs.iyango.core.domain.CourseRules
 import com.gfs.iyango.core.domain.EffectiveSchedulePort
+import com.gfs.iyango.core.domain.HolidayMakeupCodec
+import com.gfs.iyango.core.domain.HolidayRepositoryPort
 import com.gfs.iyango.core.domain.MoveOccurrence
+import com.gfs.iyango.core.domain.NoopAutoSilentCoordinator
+import com.gfs.iyango.core.domain.NoopHolidayRepository
 import com.gfs.iyango.core.domain.RefreshCoordinatorPort
 import com.gfs.iyango.core.domain.RefreshOutcome
 import com.gfs.iyango.core.domain.RefreshResource
@@ -18,6 +23,7 @@ import com.gfs.iyango.core.domain.ScheduleDataPort
 import com.gfs.iyango.core.domain.TimetableRepositoryPort
 import com.gfs.iyango.core.domain.WallpaperStore
 import com.gfs.iyango.core.model.Course
+import com.gfs.iyango.core.model.DayLabels
 import com.gfs.iyango.core.model.OccurrenceAdjustment
 import com.gfs.iyango.core.model.ScheduleDisplaySettings
 import com.gfs.iyango.core.model.Semester
@@ -84,6 +90,8 @@ class ScheduleViewModel constructor(
     private val examRepository: com.gfs.iyango.core.domain.ExamRepositoryPort,
     private val termBrowser: TermBrowseController? = null,
     private val browseDispatcher: kotlinx.coroutines.CoroutineDispatcher = Dispatchers.Default,
+    private val holidayRepository: HolidayRepositoryPort = NoopHolidayRepository,
+    private val autoSilentCoordinator: AutoSilentCoordinatorPort = NoopAutoSilentCoordinator,
 ) : ViewModel() {
     @Inject constructor(
         timetableRepository: TimetableRepositoryPort,
@@ -98,9 +106,20 @@ class ScheduleViewModel constructor(
         auth: com.gfs.iyango.core.domain.SchoolAuthPort,
         school: com.gfs.iyango.core.domain.SchoolTimetablePort,
         cache: com.gfs.iyango.core.domain.TermBrowseCachePort,
+        holidayRepository: HolidayRepositoryPort,
+        autoSilentCoordinator: AutoSilentCoordinatorPort,
     ) : this(
-        timetableRepository, scheduleData, adjustmentRepository, effectiveSchedule, appSettings,
-        wallpaperStore, refreshCoordinator, clock, examRepository,
+        timetableRepository = timetableRepository,
+        scheduleData = scheduleData,
+        adjustmentRepository = adjustmentRepository,
+        effectiveSchedule = effectiveSchedule,
+        appSettings = appSettings,
+        wallpaperStore = wallpaperStore,
+        refreshCoordinator = refreshCoordinator,
+        clock = clock,
+        examRepository = examRepository,
+        holidayRepository = holidayRepository,
+        autoSilentCoordinator = autoSilentCoordinator,
     ) {
         browser = TermBrowseController(school,cache,viewModelScope)
         observeBrowser(auth)
@@ -108,6 +127,17 @@ class ScheduleViewModel constructor(
     private var browser: TermBrowseController? = termBrowser
     private val browseState = MutableStateFlow(TermBrowseController.State())
     val termBrowsing: StateFlow<TermBrowseController.State> = browseState
+    val autoSilentExemptKeys: StateFlow<Set<String>> = autoSilentCoordinator.status
+        .map { it.exemptCourseKeys }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, emptySet())
+
+    fun toggleCourseAutoSilentExempt(course: Course) {
+        val key = com.gfs.iyango.core.domain.CourseReminderPlanner.reminderKey(course)
+        val currentlyExempt = key in autoSilentExemptKeys.value
+        viewModelScope.launch {
+            runCatching { autoSilentCoordinator.setCourseExempt(key, !currentlyExempt) }
+        }
+    }
     init {
         termBrowser?.let { supplied ->
             viewModelScope.launch { supplied.state.collect { browseState.value = it } }
@@ -488,6 +518,9 @@ class ScheduleViewModel constructor(
                                     exams = ExamWeekProjection.project(exams, data.weekStart, clock.zone, data.sectionCount, data::slotsForDay)) }
                         }
                     }
+                    .combine(holidayRepository.holidays) { weeks, holidays ->
+                        if (holidays.isEmpty()) weeks else weeks.map { it.copy(holidays = holidays) }
+                    }
                     .combine(weekSelection) { weeks, selection ->
                         val selected = selection.week ?: weeks.first().currentWeek.takeIf { it > 0 } ?: 1
                         ScheduleUiState.Ready(weeks[(selected - 1).coerceIn(weeks.indices)].copy(
@@ -842,6 +875,34 @@ class ScheduleViewModel constructor(
                 day.timetable?.let { adjustmentRepository.deleteTemporaryDay(it.id, date.toString()) }
             } catch (cancelled: CancellationException) { throw cancelled
             } catch (_: Exception) { message.value = "恢复未完成，请重试" }
+        }
+    }
+
+    /** 调休按指定星期课程覆盖当天课表。 */
+    fun applyMakeupWeekday(date: LocalDate, weekday: Int) {
+        if (browsing()) return
+        val context = (state.value as? ScheduleUiState.Ready)?.data?.context ?: return
+        viewModelScope.launch {
+            try {
+                val day = effectiveSchedule.resolveDay(date)
+                val owner = day.timetable ?: return@launch
+                if ((state.value as? ScheduleUiState.Ready)?.data?.context != context) return@launch
+                val holiday = holidayRepository.holidays.value[date]
+                val label = "${holiday?.name ?: "调休"}补${DayLabels.shortLabel(weekday)}"
+                adjustmentRepository.deleteTemporaryDay(owner.id, date.toString())
+                adjustmentRepository.insertTemporaryDay(
+                    ApplyTemporaryDay.create(
+                        timetableId = owner.id,
+                        date = date,
+                        sourceTimetableId = owner.id,
+                        title = HolidayMakeupCodec.encodeTitle(weekday, label),
+                    ),
+                )
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                message.value = "调休课表设置失败，请重试"
+            }
         }
     }
 

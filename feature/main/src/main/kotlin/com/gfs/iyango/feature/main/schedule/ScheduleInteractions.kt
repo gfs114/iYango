@@ -51,8 +51,13 @@ fun dragSectionSpan(block: WeekScheduleData.GridBlock, days: List<EffectiveSched
     return span
 }
 
-data class ScheduleDragSource(val context: ScheduleContext, val expected: OccurrenceAdjustmentExpected,
-    val span: Int) {
+data class ScheduleDragSource(
+    val context: ScheduleContext,
+    val expected: OccurrenceAdjustmentExpected,
+    val span: Int,
+    val block: WeekScheduleData.GridBlock? = null,
+    val displayedWeek: Int = 0,
+) {
     val course get() = expected.occurrence.course
 }
 data class ScheduleDropCandidate(val source: ScheduleDragSource, val slot: ScheduleDropSlot,

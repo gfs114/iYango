@@ -89,6 +89,13 @@ object SecondaryPageLauncher {
             }
             is SecondaryPageRoute.CourseRaw -> intent.putExtra("timetableId", parsed.timetableId)
             is SecondaryPageRoute.Display -> intent.putExtra("perTimetable", parsed.perTimetable)
+            is SecondaryPageRoute.Classroom -> {
+                intent.putExtra("prefillWeek", parsed.week)
+                intent.putExtra("prefillDay", parsed.dayOfWeek)
+                intent.putExtra("prefillStartSection", parsed.startSection)
+                intent.putExtra("prefillEndSection", parsed.endSection)
+            }
+            is SecondaryPageRoute.AiProviderDetail -> intent.putExtra("profileId", parsed.profileId)
             is SecondaryPageRoute.Plain -> Unit
         }
         return intent

@@ -54,8 +54,9 @@ object LaunchIntents {
 
     val TAB_ROUTES = listOf("today", "schedule", "grades", "mine")
     val ROUTES = setOf(
-        "today", "schedule", "grades", "mine", "timetable", "courses",
+        "today", "schedule", "grades", "mine", "timetable", "timetablecompare", "courses",
         "semester", "semestersummary", "importexport", "display", "wallpaper", "reminder", "exams",
+        "classroom", "aiassistant",
     )
 
     /** 显式目标优先于默认启动页；只接受白名单页签/路由与正数课程 id。 */
@@ -992,5 +993,6 @@ class AndroidWidgetUpdater @Inject constructor(
     suspend fun updateAll() {
         observedDay.value = LocalDate.now()
         WidgetRefreshAlarm.refreshAll(context)
+        NextClassTileService.requestListeningState(context)
     }
 }

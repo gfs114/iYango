@@ -5,11 +5,13 @@ import android.app.Application
 import android.os.Bundle
 import android.util.Log
 import com.gfs.iyango.core.domain.AppUpdatePort
+import com.gfs.iyango.core.domain.AutoSilentCoordinatorPort
 import com.gfs.iyango.core.domain.CalendarCoordinatorPort
 import com.gfs.iyango.core.domain.GradeCheckTrigger
 import com.gfs.iyango.core.domain.GradeMonitorCoordinatorPort
 import com.gfs.iyango.core.domain.RefreshCoordinatorPort
 import com.gfs.iyango.core.domain.ReminderCoordinatorPort
+import com.gfs.iyango.core.domain.WebDavSyncPort
 import com.gfs.iyango.data.repository.GradeRefreshHandler
 import com.gfs.iyango.data.repository.ProfileRefreshHandler
 import com.gfs.iyango.data.repository.RefreshHandlerRegistry
@@ -78,6 +80,12 @@ class IYangoApplication : Application() {
     @Inject
     lateinit var appUpdate: AppUpdatePort
 
+    @Inject
+    lateinit var autoSilentCoordinator: AutoSilentCoordinatorPort
+
+    @Inject
+    lateinit var webDavSync: WebDavSyncPort
+
     private lateinit var foregroundTracker: AppForegroundTracker
 
     override fun onCreate() {
@@ -107,8 +115,10 @@ class IYangoApplication : Application() {
         refreshCoordinator.onForeground()
         applicationScope.launch(Dispatchers.IO) {
             runCatching { reminderCoordinator.refresh() }
+            runCatching { autoSilentCoordinator.refresh() }
             runCatching { calendarCoordinator.refresh() }
             runCatching { gradeMonitorCoordinator.checkOnTrigger(GradeCheckTrigger.FOREGROUND_SILENT) }
+            runCatching { webDavSync.syncIfDue() }
         }
         // 独立协程不阻塞本地刷新。
         applicationScope.launch(Dispatchers.IO) {

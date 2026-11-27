@@ -261,10 +261,12 @@ internal fun buildChatTurnRequestJson(
     systemPrompt: String,
     messages: List<AiChatMessage>,
     tools: List<AiToolDefinition>,
+    stream: Boolean = false,
 ): String = when (protocol) {
     AiApiProtocol.OPENAI_CHAT -> buildJsonObject {
         put("model", model)
         put("temperature", 0.2)
+        if (stream) put("stream", true)
         putJsonArray("messages") {
             if (systemPrompt.isNotBlank()) {
                 addJsonObject {
@@ -276,7 +278,28 @@ internal fun buildChatTurnRequestJson(
                 when (msg.role) {
                     AiChatRole.USER -> addJsonObject {
                         put("role", "user")
-                        put("content", msg.content)
+                        if (msg.images.isEmpty()) {
+                            put("content", msg.content)
+                        } else {
+                            putJsonArray("content") {
+                                if (msg.content.isNotBlank()) {
+                                    addJsonObject {
+                                        put("type", "text")
+                                        put("text", msg.content)
+                                    }
+                                }
+                                msg.images.forEach { image ->
+                                    val b64 = Base64.getEncoder().encodeToString(image.bytes)
+                                    val mime = image.mimeType.ifBlank { "image/jpeg" }
+                                    addJsonObject {
+                                        put("type", "image_url")
+                                        putJsonObject("image_url") {
+                                            put("url", "data:$mime;base64,$b64")
+                                        }
+                                    }
+                                }
+                            }
+                        }
                     }
                     AiChatRole.ASSISTANT -> addJsonObject {
                         put("role", "assistant")
@@ -327,6 +350,7 @@ internal fun buildChatTurnRequestJson(
     AiApiProtocol.OPENAI_RESPONSES -> buildJsonObject {
         put("model", model)
         put("temperature", 0.2)
+        if (stream) put("stream", true)
         if (systemPrompt.isNotBlank()) {
             put("instructions", systemPrompt)
         }
@@ -335,7 +359,26 @@ internal fun buildChatTurnRequestJson(
                 when (msg.role) {
                     AiChatRole.USER -> addJsonObject {
                         put("role", "user")
-                        put("content", msg.content)
+                        if (msg.images.isEmpty()) {
+                            put("content", msg.content)
+                        } else {
+                            putJsonArray("content") {
+                                if (msg.content.isNotBlank()) {
+                                    addJsonObject {
+                                        put("type", "input_text")
+                                        put("text", msg.content)
+                                    }
+                                }
+                                msg.images.forEach { image ->
+                                    val b64 = Base64.getEncoder().encodeToString(image.bytes)
+                                    val mime = image.mimeType.ifBlank { "image/jpeg" }
+                                    addJsonObject {
+                                        put("type", "input_image")
+                                        put("image_url", "data:$mime;base64,$b64")
+                                    }
+                                }
+                            }
+                        }
                     }
                     AiChatRole.ASSISTANT -> {
                         if (msg.content.isNotEmpty()) {
@@ -379,6 +422,7 @@ internal fun buildChatTurnRequestJson(
         put("model", model)
         put("max_tokens", ANTHROPIC_DEFAULT_MAX_TOKENS)
         put("temperature", 0.2)
+        if (stream) put("stream", true)
         if (systemPrompt.isNotBlank()) {
             put("system", systemPrompt)
         }
@@ -390,7 +434,30 @@ internal fun buildChatTurnRequestJson(
                     AiChatRole.USER -> {
                         addJsonObject {
                             put("role", "user")
-                            put("content", msg.content)
+                            if (msg.images.isEmpty()) {
+                                put("content", msg.content)
+                            } else {
+                                putJsonArray("content") {
+                                    msg.images.forEach { image ->
+                                        val b64 = Base64.getEncoder().encodeToString(image.bytes)
+                                        val mime = image.mimeType.ifBlank { "image/jpeg" }
+                                        addJsonObject {
+                                            put("type", "image")
+                                            putJsonObject("source") {
+                                                put("type", "base64")
+                                                put("media_type", mime)
+                                                put("data", b64)
+                                            }
+                                        }
+                                    }
+                                    if (msg.content.isNotBlank()) {
+                                        addJsonObject {
+                                            put("type", "text")
+                                            put("text", msg.content)
+                                        }
+                                    }
+                                }
+                            }
                         }
                         idx++
                     }

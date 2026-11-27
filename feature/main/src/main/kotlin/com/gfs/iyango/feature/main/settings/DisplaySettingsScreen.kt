@@ -133,10 +133,25 @@ fun DisplaySettingsScreen(
 
             SectionCard(title = "布局") {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text("视图模式", style = MaterialTheme.typography.bodyLarge)
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        listOf(
+                            com.gfs.iyango.core.model.ScheduleViewMode.GRID to "网格",
+                            com.gfs.iyango.core.model.ScheduleViewMode.TIMELINE to "时间轴",
+                        ).forEach { (mode, label) ->
+                            LiquidFilterChip(
+                                selected = draft.viewMode == mode,
+                                onClick = { update(draft.copy(viewMode = mode)) },
+                                label = { Text(label) },
+                            )
+                        }
+                    }
                     SettingSwitchRow(title = "显示考试", checked = draft.showExams,
                         onCheckedChange = { update(draft.copy(showExams = it)) })
                     SettingSwitchRow(title = "显示午休分隔", checked = draft.showLunchBreak,
                         onCheckedChange = { update(draft.copy(showLunchBreak = it)) })
+                    SettingSwitchRow(title = "显示晚休分隔", checked = draft.showEveningBreak,
+                        onCheckedChange = { update(draft.copy(showEveningBreak = it)) })
                     SettingSwitchRow(title = "显示非本周课程", checked = draft.showOffWeek,
                         onCheckedChange = { update(draft.copy(showOffWeek = it)) })
                     Text("表头顺序", style = MaterialTheme.typography.bodyLarge)

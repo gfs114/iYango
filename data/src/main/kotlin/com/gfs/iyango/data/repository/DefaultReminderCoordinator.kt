@@ -5,6 +5,8 @@ import com.gfs.iyango.core.domain.AppSettingsPort
 import com.gfs.iyango.core.domain.CourseReminderPlanner
 import com.gfs.iyango.core.domain.DiagnosticLogPort
 import com.gfs.iyango.core.domain.EffectiveSchedulePort
+import com.gfs.iyango.core.domain.HolidayRepositoryPort
+import com.gfs.iyango.core.domain.NoopHolidayRepository
 import com.gfs.iyango.core.domain.ReminderCoordinatorPort
 import com.gfs.iyango.core.domain.ReminderCourseOption
 import com.gfs.iyango.core.domain.ReminderPlatformPort
@@ -53,6 +55,7 @@ class DefaultReminderCoordinator @Inject constructor(
     private val platform: ReminderPlatformPort,
     private val diagnostics: DiagnosticLogPort,
     private val clock: Clock,
+    private val holidayRepository: HolidayRepositoryPort = NoopHolidayRepository,
 ) : ReminderCoordinatorPort {
 
     private val mutex = Mutex()
@@ -77,7 +80,12 @@ class DefaultReminderCoordinator @Inject constructor(
                             adjustments.observeAdjustments(table.id),
                             adjustments.observeTemporaryDays(table.id),
                         ) { _, _ -> Unit }
-                        combine(data, adjustmentsFlow, appSettings.reminderSettings.map { Unit }) { _, _, _ -> Unit }
+                        combine(
+                            data,
+                            adjustmentsFlow,
+                            appSettings.reminderSettings.map { Unit },
+                            holidayRepository.holidays.map { it.size },
+                        ) { _, _, _, _ -> Unit }
                     }
                 }
                 .debounce(400)
@@ -104,6 +112,7 @@ class DefaultReminderCoordinator @Inject constructor(
                 liveUpdatesAllowed = liveAllowed,
                 ongoingProgressEnabled = settings.ongoingProgressEnabled,
                 courses = courses,
+                skipRemindersOnHolidays = settings.skipRemindersOnHolidays,
             )
             return@withLock
         }
@@ -121,6 +130,7 @@ class DefaultReminderCoordinator @Inject constructor(
                 skipped = listOf("未授予通知权限，提醒不会显示"),
                 failures = listOf("未授予通知权限，提醒不会显示"),
                 courses = courses,
+                skipRemindersOnHolidays = settings.skipRemindersOnHolidays,
             )
             return@withLock
         }
@@ -142,6 +152,7 @@ class DefaultReminderCoordinator @Inject constructor(
             now,
             clock.zone,
             colorOf = { overrides[CourseReminderPlanner.courseKey(it)] ?: it.color },
+            isHolidayOffDay = { holidayRepository.isHolidayOffDay(it) },
         )
         val result = platform.schedule(plan.items, OWNER_ID)
         val failures = buildList {
@@ -162,6 +173,7 @@ class DefaultReminderCoordinator @Inject constructor(
             failures = failures,
             lastSyncAt = clock.millis(),
             courses = courses,
+            skipRemindersOnHolidays = settings.skipRemindersOnHolidays,
         )
         if (failures.isNotEmpty()) {
             log(
@@ -229,6 +241,12 @@ class DefaultReminderCoordinator @Inject constructor(
         }
         if (enabled) disabled.removeAll(relatedKeys) else disabled.add(key)
         appSettings.updateReminderSettings(settings.copy(disabledCourseKeys = disabled))
+        refresh()
+    }
+
+    override suspend fun setSkipRemindersOnHolidays(skip: Boolean) {
+        val settings = appSettings.reminderSettings.first()
+        appSettings.updateReminderSettings(settings.copy(skipRemindersOnHolidays = skip).sanitized())
         refresh()
     }
 

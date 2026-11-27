@@ -1,6 +1,7 @@
 package com.gfs.iyango.feature.main.schedule
 
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -24,7 +25,10 @@ import androidx.compose.ui.unit.dp
 import com.gfs.iyango.core.designsystem.liquidglass.LiquidAlertDialog
 import com.gfs.iyango.core.designsystem.liquidglass.LiquidFloatingBar
 import com.gfs.iyango.core.domain.AdjustmentTargetPolicy
+import com.gfs.iyango.core.domain.CourseReminderPlanner
+import com.gfs.iyango.core.model.Course
 import com.gfs.iyango.core.model.ScheduleDisplaySettings
+import com.gfs.iyango.core.model.ScheduleViewMode
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 
@@ -43,10 +47,17 @@ fun ScheduleWeeks(
     onConfirmMove: suspend (ScheduleDropCandidate) -> String?,
     topInset: Dp = 0.dp,
     onPageSettled: (SchedulePagePosition) -> Unit = {},
+    autoSilentExemptKeys: Set<String> = emptySet(),
+    onQuickCancelOccurrence: (WeekScheduleData, WeekScheduleData.GridBlock) -> Unit = { _, _ -> },
+    onQuickToggleAutoSilent: (Course) -> Unit = {},
+    onQuickEditCourse: (Course) -> Unit = {},
 ) {
     key(ready.data.context) {
-        ScheduleWeeksSession(ready, display, hasWallpaper, bottomInset, active, onPick,
-            onPagerWeek, onGroupClick, onInteractionLocked, onConfirmMove, topInset, onPageSettled)
+        ScheduleWeeksSession(
+            ready, display, hasWallpaper, bottomInset, active, onPick,
+            onPagerWeek, onGroupClick, onInteractionLocked, onConfirmMove, topInset, onPageSettled,
+            autoSilentExemptKeys, onQuickCancelOccurrence, onQuickToggleAutoSilent, onQuickEditCourse,
+        )
     }
 }
 
@@ -60,6 +71,10 @@ private fun ScheduleWeeksSession(
     onConfirmMove: suspend (ScheduleDropCandidate) -> String?,
     topInset: Dp,
     onPageSettled: (SchedulePagePosition) -> Unit,
+    autoSilentExemptKeys: Set<String>,
+    onQuickCancelOccurrence: (WeekScheduleData, WeekScheduleData.GridBlock) -> Unit,
+    onQuickToggleAutoSilent: (Course) -> Unit,
+    onQuickEditCourse: (Course) -> Unit,
 ) {
     var source by remember { mutableStateOf<ScheduleDragSource?>(null) }
     var dragging by remember { mutableStateOf(false) }
@@ -125,7 +140,7 @@ private fun ScheduleWeeksSession(
     }
     fun capture(data: WeekScheduleData, block: WeekScheduleData.GridBlock, span: Int): Boolean {
         val expected = captureDragExpected(block, data.effectiveDays) ?: return false
-        source = ScheduleDragSource(data.context, expected, span)
+        source = ScheduleDragSource(data.context, expected, span, block = block, displayedWeek = data.displayedWeek)
         candidate = null
         feedback = null
         return true
@@ -194,20 +209,35 @@ private fun ScheduleWeeksSession(
                             val onPageDrop = remember(data, active) {
                                 { slot: ScheduleDropSlot? -> drop(data, slot) }
                             }
-                            ScheduleWeekGrid(data, display, hasWallpaper,
-                                edgeToEdge = true,
-                                topInset = topInset,
-                                knownWidth = pageWidth,
-                                knownHeight = pageHeight,
-                                bottomInset = bottomInset + if (source != null) floatingHeight else 0.dp,
-                                blockedRootBounds = floatingBounds.takeIf { source != null },
-                                interactionsEnabled = active && !dragging && !busy && candidate == null,
-                                stagedSpan = source?.span,
-                                onGroupClick = onPageGroupClick,
-                                onDragStart = onPageDragStart,
-                                onDrop = onPageDrop,
-                                onDragCancel = onPageDragCancel,
-                            )
+                            if (display.viewMode == ScheduleViewMode.TIMELINE) {
+                                ScheduleTimelineView(
+                                    data = data,
+                                    display = display,
+                                    hasWallpaper = hasWallpaper,
+                                    edgeToEdge = true,
+                                    topInset = topInset,
+                                    knownWidth = pageWidth,
+                                    knownHeight = pageHeight,
+                                    bottomInset = bottomInset + if (source != null) floatingHeight else 0.dp,
+                                    onGroupClick = onPageGroupClick,
+                                )
+                            } else {
+                                ScheduleWeekGrid(
+                                    data, display, hasWallpaper,
+                                    edgeToEdge = true,
+                                    topInset = topInset,
+                                    knownWidth = pageWidth,
+                                    knownHeight = pageHeight,
+                                    bottomInset = bottomInset + if (source != null) floatingHeight else 0.dp,
+                                    blockedRootBounds = floatingBounds.takeIf { source != null },
+                                    interactionsEnabled = active && !dragging && !busy && candidate == null,
+                                    stagedSpan = source?.span,
+                                    onGroupClick = onPageGroupClick,
+                                    onDragStart = onPageDragStart,
+                                    onDrop = onPageDrop,
+                                    onDragCancel = onPageDragCancel,
+                                )
+                            }
                         }
                     }
                 }
@@ -219,12 +249,40 @@ private fun ScheduleWeeksSession(
                 .testTag("schedule-drag-bar")
                 .onGloballyPositioned { floatingHeight = with(density) { it.size.height.toDp() }; floatingBounds = it.boundsInRoot() },
         ) {
+            val activeSource = source!!
+            val courseKey = CourseReminderPlanner.reminderKey(activeSource.course)
+            val isExempt = courseKey in autoSilentExemptKeys
             Column(Modifier.fillMaxWidth().navigationBarsPadding()) {
-                Text(if (dragging) "正在拖动：${source!!.course.name}" else "已暂存：${source!!.course.name}（${source!!.span}节）")
+                Text(if (dragging) "正在拖动：${activeSource.course.name}" else "已暂存：${activeSource.course.name}（${activeSource.span}节）")
                 Text(feedback ?: "可选另一周，再点击目标节次；原安排在确认前保留", style = MaterialTheme.typography.bodySmall)
-                Row {
+                Row(modifier = Modifier.horizontalScroll(rememberScrollState())) {
                     TextButton(onClick = { dragging = false; candidate = null }, enabled = !busy) { Text("暂存到其他周") }
                     TextButton(onClick = { source = null; dragging = false; candidate = null }, enabled = !busy) { Text("取消调课") }
+                    activeSource.block?.let { blk ->
+                        TextButton(
+                            onClick = {
+                                onQuickCancelOccurrence(ready.data.copy(displayedWeek = activeSource.displayedWeek), blk)
+                                source = null
+                                dragging = false
+                                candidate = null
+                            },
+                            enabled = !busy,
+                        ) { Text("本节停课") }
+                    }
+                    TextButton(
+                        onClick = { onQuickToggleAutoSilent(activeSource.course) },
+                        enabled = !busy,
+                    ) { Text(if (isExempt) "恢复静音" else "免静音") }
+                    TextButton(
+                        onClick = {
+                            val targetCourse = activeSource.course
+                            source = null
+                            dragging = false
+                            candidate = null
+                            onQuickEditCourse(targetCourse)
+                        },
+                        enabled = !busy,
+                    ) { Text("编辑") }
                 }
             }
         }

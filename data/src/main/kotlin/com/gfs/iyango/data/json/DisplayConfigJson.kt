@@ -52,6 +52,8 @@ data class DisplayConfigJson(
     val backgroundColorHex: String = "",
     val paletteLight: List<String> = emptyList(),
     val paletteDark: List<String> = emptyList(),
+    val viewMode: String = "GRID",
+    val showEveningBreak: Boolean = false,
 ) {
     fun toModel(): ScheduleDisplaySettings {
         val resolvedStyle = gridLineStyle.trim().takeIf { it.isNotEmpty() }
@@ -96,6 +98,9 @@ data class DisplayConfigJson(
             backgroundColorHex = backgroundColorHex,
             paletteLight = paletteLight,
             paletteDark = paletteDark,
+            viewMode = runCatching { com.gfs.iyango.core.model.ScheduleViewMode.valueOf(viewMode) }
+                .getOrDefault(com.gfs.iyango.core.model.ScheduleViewMode.GRID),
+            showEveningBreak = showEveningBreak,
         ).sanitized()
     }
 }
@@ -149,6 +154,8 @@ fun encodeDisplayConfig(settings: ScheduleDisplaySettings): String {
             backgroundColorHex = model.backgroundColorHex,
             paletteLight = model.paletteLight,
             paletteDark = model.paletteDark,
+            viewMode = model.viewMode.name,
+            showEveningBreak = model.showEveningBreak,
         ),
     )
 }

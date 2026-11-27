@@ -64,6 +64,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.gfs.iyango.core.domain.CalendarClearResult
 import com.gfs.iyango.core.domain.GradeCheckOutcome
 import com.gfs.iyango.core.domain.ReminderCourseOption
+import com.gfs.iyango.core.model.AutoSilentMode
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -86,6 +87,7 @@ fun ReminderCalendarScreen(
     var confirmClearCalendar by remember { mutableStateOf(false) }
     var clearingCalendar by remember { mutableStateOf(false) }
     var checkingGrades by remember { mutableStateOf(false) }
+    var refreshingHolidays by remember { mutableStateOf(false) }
 
     val notificationLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission(),
@@ -188,6 +190,11 @@ fun ReminderCalendarScreen(
                             title = "上课实时进度常驻通知",
                             checked = state.ongoingProgressEnabled,
                             onCheckedChange = viewModel::setOngoingProgressEnabled,
+                        )
+                        SettingSwitchRow(
+                            title = "法定节假日跳过提醒",
+                            checked = state.skipRemindersOnHolidays,
+                            onCheckedChange = viewModel::setSkipRemindersOnHolidays,
                         )
                         LiquidOutlinedButton(
                             onClick = {
@@ -497,6 +504,110 @@ fun ReminderCalendarScreen(
                     }
                 }
             }
+
+            SectionCard(title = "上课自动静音") {
+                val silent = state.autoSilent
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        listOf(
+                            AutoSilentMode.OFF to "关闭",
+                            AutoSilentMode.VIBRATE to "振动",
+                            AutoSilentMode.SILENT to "静音",
+                            AutoSilentMode.DND to "勿扰",
+                        ).forEach { (mode, label) ->
+                            LiquidFilterChip(
+                                selected = silent.mode == mode,
+                                onClick = { viewModel.setAutoSilentMode(mode) },
+                                label = { Text(label) },
+                            )
+                        }
+                    }
+                    if (silent.mode != AutoSilentMode.OFF) {
+                        if (silent.mode == AutoSilentMode.SILENT || silent.mode == AutoSilentMode.DND) {
+                            StatusRow(
+                                title = "勿扰权限",
+                                value = if (silent.policyAccessGranted) "已授权" else "未授权（将降级为振动）",
+                                action = if (silent.policyAccessGranted) {
+                                    null
+                                } else {
+                                    "去授权" to { openPolicyAccessSettings(context) }
+                                },
+                            )
+                        }
+                        if (!state.reminder.exactAlarmsAllowed) {
+                            StatusRow(
+                                title = "精确闹钟",
+                                value = "受限，切换时间可能延迟",
+                                action = "去设置" to { openExactAlarmSettings(context) },
+                            )
+                        }
+                        SettingSwitchRow(
+                            title = "法定节假日跳过静音",
+                            checked = silent.skipOnHolidays,
+                            onCheckedChange = viewModel::setAutoSilentSkipOnHolidays,
+                        )
+                        Text(
+                            text = if (silent.activeCourseName != null) {
+                                "当前生效 ${silent.activeCourseName}"
+                            } else {
+                                "已排程 ${silent.scheduledCount} 节"
+                            },
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                        LiquidOutlinedButton(
+                            onClick = {
+                                viewModel.restoreAutoSilentNow()
+                                scope.launch {
+                                    snackbarHostState.currentSnackbarData?.dismiss()
+                                    snackbarHostState.showSnackbar("已恢复铃声状态")
+                                }
+                            },
+                        ) {
+                            Text("立即恢复铃声")
+                        }
+                        if (state.reminder.courses.isNotEmpty()) {
+                            HorizontalDivider()
+                            Text("免静音课程", style = MaterialTheme.typography.titleSmall)
+                            state.reminder.courses.forEach { course ->
+                                val exempt = course.key in silent.exemptCourseKeys
+                                CourseSwitchRow(
+                                    course = course.copy(enabled = exempt),
+                                    onCheckedChange = { checked ->
+                                        viewModel.setAutoSilentCourseExempt(course.key, checked)
+                                    },
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            SectionCard(title = "节假日与调休") {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    LiquidOutlinedButton(
+                        enabled = !refreshingHolidays,
+                        onClick = {
+                            refreshingHolidays = true
+                            scope.launch {
+                                try {
+                                    val ok = viewModel.refreshHolidays()
+                                    snackbarHostState.currentSnackbarData?.dismiss()
+                                    snackbarHostState.showSnackbar(
+                                        if (ok) "节假日数据已更新" else "离线内置数据已就绪，在线更新失败",
+                                    )
+                                } finally {
+                                    refreshingHolidays = false
+                                }
+                            }
+                        },
+                    ) {
+                        Text(if (refreshingHolidays) "更新中…" else "更新节假日数据")
+                    }
+                }
+            }
         }
     }
 
@@ -623,6 +734,12 @@ private fun openExactAlarmSettings(context: Context) {
                 data = Uri.parse("package:${context.packageName}")
             },
         )
+    }
+}
+
+private fun openPolicyAccessSettings(context: Context) {
+    runCatching {
+        context.startActivity(Intent(Settings.ACTION_NOTIFICATION_POLICY_ACCESS_SETTINGS))
     }
 }
 

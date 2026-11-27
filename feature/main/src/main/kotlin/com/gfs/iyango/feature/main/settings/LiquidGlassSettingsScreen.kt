@@ -532,8 +532,8 @@ fun LiquidGlassSettingsScreen(
     }
 
     val isAllDefault = draft.globalGlass == DefaultGlobal &&
-        draft.dockSurfaceAlphaLight == 0f &&
-        draft.dockSurfaceAlphaDark == 0f &&
+        draft.dockSurfaceAlphaLight == DefaultTheme.dockSurfaceAlphaLight &&
+        draft.dockSurfaceAlphaDark == DefaultTheme.dockSurfaceAlphaDark &&
         draft.dockGlass == DockGlassSettings()
 
     val snackbarHostState = remember { SnackbarHostState() }
@@ -561,8 +561,8 @@ fun LiquidGlassSettingsScreen(
                         enabled = !isAllDefault,
                         onClick = {
                             val reset = draft.copy(
-                                dockSurfaceAlphaLight = 0f,
-                                dockSurfaceAlphaDark = 0f,
+                                dockSurfaceAlphaLight = DefaultTheme.dockSurfaceAlphaLight,
+                                dockSurfaceAlphaDark = DefaultTheme.dockSurfaceAlphaDark,
                                 dockGlass = DockGlassSettings(),
                                 globalGlass = DefaultGlobal,
                             )

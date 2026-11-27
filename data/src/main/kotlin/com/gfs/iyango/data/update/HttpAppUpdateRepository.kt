@@ -237,7 +237,7 @@ class HttpAppUpdateRepository internal constructor(
 
         private fun readPackageVersion(context: Context): Pair<String, Long> {
             val info = runCatching { context.packageManager.getPackageInfo(context.packageName, 0) }.getOrNull()
-            val name = info?.versionName ?: "0.1.2"
+            val name = info?.versionName ?: "1.0"
             val code = when {
                 info == null -> 0L
                 Build.VERSION.SDK_INT >= Build.VERSION_CODES.P -> info.longVersionCode

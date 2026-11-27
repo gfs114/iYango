@@ -34,6 +34,25 @@ sealed interface SecondaryPageRoute {
         override val route: String = "display?perTimetable=$perTimetable"
     }
 
+    /** `"classroom"` 或带预填时段的 `"classroom?week=..."`。 */
+    data class Classroom(
+        val week: Int = 0,
+        val dayOfWeek: Int = 0,
+        val startSection: Int = 0,
+        val endSection: Int = 0,
+    ) : SecondaryPageRoute {
+        override val route: String = if (week == 0 && dayOfWeek == 0 && startSection == 0 && endSection == 0) {
+            "classroom"
+        } else {
+            "classroom?week=$week&day=$dayOfWeek&startSection=$startSection&endSection=$endSection"
+        }
+    }
+
+    /** `"aiconfig/detail/{profileId}"`；三级页，单个 AI 服务商详情配置（原生跨 Activity 预测返回）。 */
+    data class AiProviderDetail(val profileId: String) : SecondaryPageRoute {
+        override val route: String = "aiconfig/detail/$profileId"
+    }
+
     /** 无参白名单路由（含 mine 系分类页）。 */
     data class Plain(val id: String) : SecondaryPageRoute {
         override val route: String = id
@@ -45,8 +64,8 @@ sealed interface SecondaryPageRoute {
             MineCategory.entries.forEach { add(it.route) }
             addAll(
                 listOf(
-                    "courses", "school", "schoolsync", "synchistory", "exams", "classroom",
-                    "timetable", "semester", "homesettings", "wallpaper", "font", "liquidglass",
+                    "courses", "school", "schoolsync", "synchistory", "exams",
+                    "timetable", "timetablecompare", "semester", "homesettings", "wallpaper", "font", "liquidglass",
                     "dockglass", "dockglass/dev", "reminder", "importexport", "aiimport", "aiconfig", "aiassistant",
                     "scheduleexport", "semestersummary", "settingsbackup", "creditprogress",
                     "about", "runtimelogs",
@@ -79,6 +98,21 @@ sealed interface SecondaryPageRoute {
                     val params = queryMap(query)
                     Display(perTimetable = strictBoolean(params, "perTimetable") ?: return null)
                 }
+                base == "classroom" -> {
+                    val params = queryMap(query)
+                    Classroom(
+                        week = strictInt(params, "week") ?: return null,
+                        dayOfWeek = strictInt(params, "day") ?: return null,
+                        startSection = strictInt(params, "startSection") ?: return null,
+                        endSection = strictInt(params, "endSection") ?: return null,
+                    )
+                }
+                base.startsWith("aiconfig/detail/") -> {
+                    if (query.isNotEmpty()) return null
+                    val segment = base.removePrefix("aiconfig/detail/")
+                    val valid = segment.isNotBlank() && segment.all { it.isLetterOrDigit() || it == '-' || it == '_' }
+                    if (valid) AiProviderDetail(segment) else null
+                }
                 else -> if (query.isEmpty() && base in PLAIN_ROUTES) Plain(base) else null
             }
         }
@@ -96,6 +130,13 @@ sealed interface SecondaryPageRoute {
             val value = params[key] ?: return 0L
             if (value.isBlank()) return 0L
             return value.toLongOrNull()
+        }
+
+        /** 可选 Int 参数：缺失或空值回退默认；出现但非法返回 null（整体拒收）。 */
+        private fun strictInt(params: Map<String, String>, key: String): Int? {
+            val value = params[key] ?: return 0
+            if (value.isBlank()) return 0
+            return value.toIntOrNull()
         }
 
         /** 可选 Boolean 参数：缺失或空值回退默认；出现但非法返回 null（整体拒收）。 */

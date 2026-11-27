@@ -2,23 +2,36 @@ package com.gfs.iyango.feature.main.settings
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.gfs.iyango.core.domain.NoopWebDavSync
 import com.gfs.iyango.core.domain.SettingsBackupPort
 import com.gfs.iyango.core.domain.SettingsBackupPreview
 import com.gfs.iyango.core.domain.SettingsBackupReadResult
+import com.gfs.iyango.core.domain.WebDavBackupPreview
+import com.gfs.iyango.core.domain.WebDavConfig
+import com.gfs.iyango.core.domain.WebDavPreset
+import com.gfs.iyango.core.domain.WebDavRemoteBackup
+import com.gfs.iyango.core.domain.WebDavSyncPort
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 
 /**
  * 设置备份/恢复/重置页 ViewModel（F17）。
  *
- * 文件读写经 SAF 由 Screen 完成；本类只处理字节 → 预览 → 确认应用。
+ * 文件读写经 SAF 由 Screen 完成；本类只处理字节 → 预览 → 确认应用，并集成 WebDAV 云端备份。
  */
 @HiltViewModel
 class SettingsBackupViewModel @Inject constructor(
     private val backup: SettingsBackupPort,
+    private val webDavSync: WebDavSyncPort = NoopWebDavSync,
 ) : ViewModel() {
+
+    val webDavConfig: StateFlow<WebDavConfig> = webDavSync.config
+    val webDavBackups = MutableStateFlow<List<WebDavRemoteBackup>>(emptyList())
+    val webDavPreview = MutableStateFlow<Pair<WebDavBackupPreview, ByteArray>?>(null)
+    val webDavBusy = MutableStateFlow(false)
 
     val pendingExport = MutableStateFlow<PendingExport?>(null)
 
@@ -119,6 +132,82 @@ class SettingsBackupViewModel @Inject constructor(
 
     fun consumeDone() {
         doneMessage.value = null
+    }
+
+    fun saveWebDavConfig(config: WebDavConfig, password: String?) {
+        viewModelScope.launch {
+            webDavSync.saveConfig(config, password)
+        }
+    }
+
+    fun testWebDav(config: WebDavConfig, password: String?) {
+        viewModelScope.launch {
+            webDavBusy.value = true
+            error.value = null
+            webDavSync.saveConfig(config, password)
+            webDavSync.testConnection(config, password)
+                .onSuccess { doneMessage.value = "WebDAV 连接成功" }
+                .onFailure { error.value = it.message ?: "WebDAV 连接失败" }
+            webDavBusy.value = false
+        }
+    }
+
+    fun backupToWebDav(config: WebDavConfig, password: String?) {
+        viewModelScope.launch {
+            webDavBusy.value = true
+            error.value = null
+            webDavSync.saveConfig(config, password)
+            webDavSync.backupNow()
+                .onSuccess { fileName -> doneMessage.value = "已上传云备份：$fileName" }
+                .onFailure { error.value = it.message ?: "上传备份失败" }
+            webDavBusy.value = false
+        }
+    }
+
+    fun loadWebDavBackups(config: WebDavConfig, password: String?) {
+        viewModelScope.launch {
+            webDavBusy.value = true
+            error.value = null
+            webDavSync.saveConfig(config, password)
+            webDavSync.listBackups()
+                .onSuccess { list ->
+                    webDavBackups.value = list
+                    if (list.isEmpty()) error.value = "远端目录中暂无备份文件"
+                }
+                .onFailure { error.value = it.message ?: "读取远端备份列表失败" }
+            webDavBusy.value = false
+        }
+    }
+
+    fun previewWebDavBackup(remote: WebDavRemoteBackup) {
+        viewModelScope.launch {
+            webDavBusy.value = true
+            error.value = null
+            webDavSync.downloadPreview(remote)
+                .onSuccess { pair -> webDavPreview.value = pair }
+                .onFailure { error.value = it.message ?: "下载备份失败" }
+            webDavBusy.value = false
+        }
+    }
+
+    fun dismissWebDavPreview() {
+        webDavPreview.value = null
+    }
+
+    fun confirmRestoreWebDav() {
+        val current = webDavPreview.value ?: return
+        viewModelScope.launch {
+            webDavBusy.value = true
+            error.value = null
+            webDavSync.restoreFromBytes(current.second)
+                .onSuccess { restored ->
+                    webDavPreview.value = null
+                    webDavBackups.value = emptyList()
+                    doneMessage.value = "已从云端恢复 ${restored.timetableCount} 张课表、${restored.courseCount} 条课程"
+                }
+                .onFailure { error.value = it.message ?: "云端恢复失败" }
+            webDavBusy.value = false
+        }
     }
 
     data class PendingExport(val bytes: ByteArray, val fileName: String) {

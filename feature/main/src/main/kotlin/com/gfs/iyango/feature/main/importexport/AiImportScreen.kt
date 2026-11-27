@@ -3,10 +3,7 @@
 package com.gfs.iyango.feature.main.importexport
 
 import android.content.Context
-import android.graphics.Bitmap
-import android.graphics.BitmapFactory
 import android.net.Uri
-import android.provider.OpenableColumns
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
@@ -80,20 +77,19 @@ import com.gfs.iyango.core.domain.AiApiProtocol
 import com.gfs.iyango.core.domain.AiImagePayload
 import com.gfs.iyango.core.domain.AiModelInfo
 import com.gfs.iyango.core.domain.AiProviderPreset
+import com.gfs.iyango.core.domain.AiProviderProfile
 import com.gfs.iyango.core.domain.ImportWriteMode
 import com.gfs.iyango.core.domain.ScheduleImportPreview
 import com.gfs.iyango.core.domain.ScheduleImportTargetInfo
 import com.gfs.iyango.core.model.Timetable
-import java.io.ByteArrayOutputStream
+import com.gfs.iyango.feature.main.ai.AiProviderAvatar
+import com.gfs.iyango.feature.main.ai.compressAiImageUri
+import com.gfs.iyango.feature.main.ai.decodeSelectedAiImages
 import java.io.File
 import java.net.URI
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-
-private const val MAX_IMAGE_DIMENSION_PX = 1600
-private const val MAX_IMAGE_BYTES = 4 * 1024 * 1024
-private const val MAX_RAW_URI_BYTES = 24 * 1024 * 1024
 
 internal object AiImportTags {
     const val CONNECTION_STRIP = "ai_import_connection_strip"
@@ -131,6 +127,9 @@ fun AiImportScreen(
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
+
+    val profiles by viewModel.profiles.collectAsStateWithLifecycle()
+    val activeProfileId by viewModel.activeProfileId.collectAsStateWithLifecycle()
 
     val protocol by viewModel.protocol.collectAsStateWithLifecycle()
     val baseUrl by viewModel.baseUrl.collectAsStateWithLifecycle()
@@ -173,7 +172,7 @@ fun AiImportScreen(
         if (uris.isEmpty()) return@rememberLauncherForActivityResult
         scope.launch {
             val (decoded, skipped) = withContext(Dispatchers.IO) {
-                decodeSelectedImages(context, uris)
+                decodeSelectedAiImages(context, uris, AiImportViewModel.MAX_IMAGES)
             }
             viewModel.addImages(decoded, skipped)
         }
@@ -191,7 +190,7 @@ fun AiImportScreen(
                     if (!saved) {
                         emptyList<AiImagePayload>() to 0
                     } else {
-                        val payload = compressImageUri(context, Uri.fromFile(file), "拍照_${System.currentTimeMillis() % 10000}.jpg")
+                        val payload = compressAiImageUri(context, Uri.fromFile(file), "拍照_${System.currentTimeMillis() % 10000}.jpg")
                         if (payload != null) listOf(payload) to 0 else emptyList<AiImagePayload>() to 1
                     }
                 } finally {
@@ -288,6 +287,9 @@ fun AiImportScreen(
         protocol = protocol,
         onProtocolChange = viewModel::selectProtocol,
         onOpenAiConfig = onOpenAiConfig,
+        profiles = profiles,
+        activeProfileId = activeProfileId,
+        onSelectProfile = viewModel::selectProfile,
     )
 }
 
@@ -360,6 +362,9 @@ internal fun AiImportContent(
     protocol: AiApiProtocol = AiApiProtocol.OPENAI_CHAT,
     onProtocolChange: (AiApiProtocol) -> Unit = {},
     onOpenAiConfig: (() -> Unit)? = null,
+    profiles: List<AiProviderProfile> = listOf(AiProviderProfile()),
+    activeProfileId: String = AiProviderProfile.DEFAULT_ID,
+    onSelectProfile: (String) -> Unit = {},
 ) {
     GlassScaffold(
         topBar = {
@@ -404,6 +409,20 @@ internal fun AiImportContent(
                     model = model,
                     onConfigure = onToggleConfigExpanded,
                 )
+                if (profiles.size > 1) {
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        profiles.forEach { profile ->
+                            LiquidFilterChip(
+                                selected = profile.id == activeProfileId,
+                                onClick = { onSelectProfile(profile.id) },
+                                label = { Text(profile.name) },
+                            )
+                        }
+                    }
+                }
             } else {
                 AiConfigSection(
                     protocol = protocol,
@@ -962,7 +981,7 @@ private fun AiProviderPickerDialog(
                     LazyColumn(modifier = Modifier.fillMaxWidth().heightIn(max = 320.dp)) {
                         items(filtered, key = { it.id }) { preset ->
                             val selected = currentBaseUrl.trim().equals(preset.baseUrl, ignoreCase = true)
-                            Column(
+                            Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .clickable { onSelect(preset) }
@@ -975,36 +994,49 @@ private fun AiProviderPickerDialog(
                                         contentDescription = tags.joinToString("，")
                                     }
                                     .padding(vertical = 8.dp),
-                                verticalArrangement = Arrangement.spacedBy(2.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(10.dp),
                             ) {
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                ) {
-                                    Text(
-                                        text = preset.label,
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
-                                        color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
-                                        modifier = Modifier.weight(1f),
-                                    )
-                                    if (selected) {
-                                        Icon(
-                                            Icons.Filled.Check,
-                                            contentDescription = null,
-                                            tint = MaterialTheme.colorScheme.primary,
-                                            modifier = Modifier.size(16.dp),
-                                        )
-                                    }
-                                }
-                                Text(
-                                    text = preset.baseUrl,
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
+                                AiProviderAvatar(
+                                    name = preset.label,
+                                    baseUrl = preset.baseUrl,
+                                    protocol = preset.protocol,
+                                    size = 28.dp,
+                                    presetId = preset.id,
                                 )
+                                Column(
+                                    modifier = Modifier.weight(1f),
+                                    verticalArrangement = Arrangement.spacedBy(2.dp),
+                                ) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                    ) {
+                                        Text(
+                                            text = preset.label,
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+                                            color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                                            modifier = Modifier.weight(1f),
+                                        )
+                                        if (selected) {
+                                            Icon(
+                                                Icons.Filled.Check,
+                                                contentDescription = null,
+                                                tint = MaterialTheme.colorScheme.primary,
+                                                modifier = Modifier.size(16.dp),
+                                            )
+                                        }
+                                    }
+                                    Text(
+                                        text = preset.baseUrl,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                    )
+                                }
                             }
                             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
                         }
@@ -1091,102 +1123,4 @@ private fun AiModelPickerDialog(
             TextButton(onClick = onDismiss) { Text("关闭") }
         },
     )
-}
-
-private fun decodeSelectedImages(
-    context: Context,
-    uris: List<Uri>,
-): Pair<List<AiImagePayload>, Int> {
-    val result = mutableListOf<AiImagePayload>()
-    var skipped = 0
-    for (uri in uris.take(AiImportViewModel.MAX_IMAGES)) {
-        val payload = compressImageUri(context, uri)
-        if (payload != null) {
-            result += payload
-        } else {
-            skipped++
-        }
-    }
-    return result to skipped
-}
-
-private fun compressImageUri(
-    context: Context,
-    uri: Uri,
-    displayNameOverride: String = "",
-): AiImagePayload? = runCatching {
-    val resolver = context.contentResolver
-    val rawBytes = resolver.openInputStream(uri)?.use { stream ->
-        val out = ByteArrayOutputStream()
-        val buf = ByteArray(DEFAULT_BUFFER_SIZE)
-        while (true) {
-            val read = stream.read(buf)
-            if (read <= 0) break
-            if (out.size() + read > MAX_RAW_URI_BYTES) return@runCatching null
-            out.write(buf, 0, read)
-        }
-        out.toByteArray()
-    } ?: return@runCatching null
-
-    val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-    BitmapFactory.decodeByteArray(rawBytes, 0, rawBytes.size, bounds)
-    if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return@runCatching null
-
-    var sample = 1
-    while (bounds.outWidth / sample > MAX_IMAGE_DIMENSION_PX ||
-        bounds.outHeight / sample > MAX_IMAGE_DIMENSION_PX
-    ) {
-        sample *= 2
-    }
-    val decodeOpts = BitmapFactory.Options().apply { inSampleSize = sample }
-    val sampled = BitmapFactory.decodeByteArray(rawBytes, 0, rawBytes.size, decodeOpts)
-        ?: return@runCatching null
-
-    val scaled = try {
-        val maxSide = maxOf(sampled.width, sampled.height)
-        if (maxSide > MAX_IMAGE_DIMENSION_PX) {
-            val ratio = MAX_IMAGE_DIMENSION_PX.toFloat() / maxSide
-            val w = (sampled.width * ratio).toInt().coerceAtLeast(1)
-            val h = (sampled.height * ratio).toInt().coerceAtLeast(1)
-            Bitmap.createScaledBitmap(sampled, w, h, true).also {
-                if (it !== sampled) sampled.recycle()
-            }
-        } else {
-            sampled
-        }
-    } catch (t: Throwable) {
-        sampled.recycle()
-        throw t
-    }
-
-    val jpegBytes = try {
-        val out = ByteArrayOutputStream()
-        scaled.compress(Bitmap.CompressFormat.JPEG, 85, out)
-        out.toByteArray()
-    } finally {
-        scaled.recycle()
-    }
-    if (jpegBytes.isEmpty() || jpegBytes.size > MAX_IMAGE_BYTES) return@runCatching null
-
-    val name = displayNameOverride.ifBlank { queryDisplayName(context, uri) }
-    AiImagePayload(
-        bytes = jpegBytes,
-        mimeType = "image/jpeg",
-        displayName = name,
-    )
-}.getOrNull()
-
-private fun queryDisplayName(context: Context, uri: Uri): String {
-    runCatching {
-        context.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
-            if (cursor.moveToFirst()) {
-                val idx = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
-                if (idx >= 0) {
-                    val value = cursor.getString(idx)
-                    if (!value.isNullOrBlank()) return value
-                }
-            }
-        }
-    }
-    return uri.lastPathSegment.orEmpty().substringAfterLast('/')
 }

@@ -9,6 +9,7 @@ import com.gfs.iyango.core.domain.AiImportParseResult
 import com.gfs.iyango.core.domain.AiModelInfo
 import com.gfs.iyango.core.domain.AiProviderConfig
 import com.gfs.iyango.core.domain.AiProviderPreset
+import com.gfs.iyango.core.domain.AiProviderProfile
 import com.gfs.iyango.core.domain.AiScheduleImportPort
 import com.gfs.iyango.core.domain.ImportWriteMode
 import com.gfs.iyango.core.domain.ScheduleImportOptions
@@ -46,6 +47,9 @@ class AiImportViewModel @Inject constructor(
     private val timetableRepository: TimetableRepositoryPort,
     private val clock: Clock,
 ) : ViewModel() {
+
+    val profiles = MutableStateFlow<List<AiProviderProfile>>(listOf(AiProviderProfile()))
+    val activeProfileId = MutableStateFlow(AiProviderProfile.DEFAULT_ID)
 
     val protocol = MutableStateFlow(AiApiProtocol.OPENAI_CHAT)
     val baseUrl = MutableStateFlow(AiProviderConfig.DEFAULT_BASE_URL)
@@ -93,8 +97,11 @@ class AiImportViewModel @Inject constructor(
 
     fun reloadConfig() {
         viewModelScope.launch {
-            runCatching { aiConfigStore.load() }
-                .onSuccess { loaded ->
+            runCatching { aiConfigStore.loadProfiles() }
+                .onSuccess { snapshot ->
+                    profiles.value = snapshot.profiles
+                    activeProfileId.value = snapshot.activeProfileId
+                    val loaded = snapshot.activeProfile.config
                     protocol.value = loaded.protocol
                     baseUrl.value = loaded.baseUrl
                     model.value = loaded.model
@@ -103,6 +110,40 @@ class AiImportViewModel @Inject constructor(
                     configExpanded.value = !loaded.isConfigured
                     modelsFetched.value = loaded.isConfigured
                 }
+                .onFailure {
+                    runCatching { aiConfigStore.load() }
+                        .onSuccess { loaded ->
+                            protocol.value = loaded.protocol
+                            baseUrl.value = loaded.baseUrl
+                            model.value = loaded.model
+                            apiKey.value = loaded.apiKey
+                            configConfigured.value = loaded.isConfigured
+                            configExpanded.value = !loaded.isConfigured
+                            modelsFetched.value = loaded.isConfigured
+                        }
+                }
+        }
+    }
+
+    fun selectProfile(profileId: String) {
+        viewModelScope.launch {
+            runCatching {
+                val loaded = aiConfigStore.selectProfile(profileId)
+                val snapshot = aiConfigStore.loadProfiles()
+                loaded to snapshot
+            }.onSuccess { (loaded, snapshot) ->
+                profiles.value = snapshot.profiles
+                activeProfileId.value = snapshot.activeProfileId
+                protocol.value = loaded.protocol
+                baseUrl.value = loaded.baseUrl
+                model.value = loaded.model
+                apiKey.value = loaded.apiKey
+                configConfigured.value = loaded.isConfigured
+                availableModels.value = emptyList()
+                connectionMessage.value = null
+            }.onFailure {
+                error.value = it.message ?: "切换配置档案失败"
+            }
         }
     }
 

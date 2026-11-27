@@ -66,8 +66,6 @@ import androidx.compose.ui.window.DialogWindowProvider
 import androidx.compose.ui.window.PopupProperties
 import com.kyant.backdrop.backdrops.rememberCanvasBackdrop
 import com.kyant.backdrop.drawBackdrop
-import com.kyant.backdrop.effects.blur
-import com.kyant.backdrop.effects.lens
 import com.kyant.backdrop.highlight.Highlight
 import com.kyant.backdrop.highlight.HighlightStyle
 import com.kyant.backdrop.shadow.InnerShadow
@@ -209,12 +207,14 @@ fun LiquidDialogSurface(
                     backdrop = windowLocalBackdrop,
                     shape = { shape },
                     effects = {
-                        if (blurDp > 0.01.dp) {
-                            blur(blurDp.toPx())
-                        }
-                        if (canRefract && lensW > 0.01.dp && lensH > 0.01.dp) {
-                            lens(lensW.toPx(), lensH.toPx())
-                        }
+                        applyGlassEffects(
+                            blurDp = blurDp.value,
+                            lensWidthDp = lensW.value,
+                            lensHeightDp = lensH.value,
+                            canRefract = canRefract,
+                            depthEffect = spec.depthEffect,
+                            chromaticAberration = spec.chromaticAberration,
+                        )
                     },
                     highlight = { highlightSpec },
                     shadow = {

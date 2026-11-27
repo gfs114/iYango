@@ -126,6 +126,15 @@ object IYangoDatabaseMigrations {
         }
     }
 
+    /**
+     * v7 → v8：新增 AI 助理多会话与消息历史表。
+     */
+    val MIGRATION_7_8: Migration = object : Migration(7, 8) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            V8_AI_CHAT_TABLES.forEach(db::execSQL)
+        }
+    }
+
     /** 全部迁移，按版本顺序排列；生产构建一次性注册，Room 自行择路。 */
     val ALL: Array<Migration> = arrayOf(
         MIGRATION_1_2,
@@ -134,6 +143,7 @@ object IYangoDatabaseMigrations {
         MIGRATION_4_5,
         MIGRATION_5_6,
         MIGRATION_6_7,
+        MIGRATION_7_8,
     )
 
     /** v2 course 表建表 SQL（与 data/schemas/…/2.json 的 createSql 逐字一致）。 */
@@ -465,5 +475,32 @@ object IYangoDatabaseMigrations {
             "PRIMARY KEY(`accountKey`, `ruleKey`))",
         "CREATE INDEX IF NOT EXISTS `index_credit_resolution_rule_accountKey` " +
             "ON `credit_resolution_rule` (`accountKey`)",
+    )
+
+    private val V8_AI_CHAT_TABLES: List<String> = listOf(
+        "CREATE TABLE IF NOT EXISTS `ai_chat_session` (" +
+            "`id` TEXT NOT NULL, " +
+            "`title` TEXT NOT NULL DEFAULT '新对话', " +
+            "`createdAt` INTEGER NOT NULL DEFAULT 0, " +
+            "`updatedAt` INTEGER NOT NULL DEFAULT 0, " +
+            "PRIMARY KEY(`id`))",
+        "CREATE INDEX IF NOT EXISTS `index_ai_chat_session_updatedAt` " +
+            "ON `ai_chat_session` (`updatedAt`)",
+        "CREATE TABLE IF NOT EXISTS `ai_chat_message` (" +
+            "`id` TEXT NOT NULL, " +
+            "`sessionId` TEXT NOT NULL, " +
+            "`role` TEXT NOT NULL, " +
+            "`text` TEXT NOT NULL DEFAULT '', " +
+            "`toolTracesJson` TEXT NOT NULL DEFAULT '[]', " +
+            "`pendingActionsJson` TEXT NOT NULL DEFAULT '[]', " +
+            "`isError` INTEGER NOT NULL DEFAULT 0, " +
+            "`imageCount` INTEGER NOT NULL DEFAULT 0, " +
+            "`createdAt` INTEGER NOT NULL DEFAULT 0, " +
+            "PRIMARY KEY(`id`), " +
+            "FOREIGN KEY(`sessionId`) REFERENCES `ai_chat_session`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE)",
+        "CREATE INDEX IF NOT EXISTS `index_ai_chat_message_sessionId` " +
+            "ON `ai_chat_message` (`sessionId`)",
+        "CREATE INDEX IF NOT EXISTS `index_ai_chat_message_createdAt` " +
+            "ON `ai_chat_message` (`createdAt`)",
     )
 }

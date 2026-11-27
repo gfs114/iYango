@@ -25,6 +25,12 @@
     <string name="shortcut_today_long">首页</string>
     <string name="shortcut_schedule_short">课程表</string>
     <string name="shortcut_schedule_long">课程表</string>
+    <string name="shortcut_classroom_short">空教室</string>
+    <string name="shortcut_classroom_long">空教室</string>
+    <string name="shortcut_grades_short">成绩</string>
+    <string name="shortcut_grades_long">成绩</string>
     <string name="shortcut_mine_short">我的</string>
     <string name="shortcut_mine_long">我的</string>
+
+    <string name="qs_tile_next_class_label">下节课</string>
 </resources>

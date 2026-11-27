@@ -64,6 +64,7 @@ import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.gfs.iyango.core.designsystem.component.SectionCard
 import com.gfs.iyango.core.designsystem.theme.IYangoThemePreview
+import com.gfs.iyango.core.domain.ExternalScheduleImportBus
 import com.gfs.iyango.core.domain.ImportWriteMode
 import com.gfs.iyango.core.domain.QrEncodeResult
 import com.gfs.iyango.core.domain.ScheduleImportItem
@@ -93,6 +94,7 @@ fun ImportExportScreen(
     val shareState by viewModel.shareState.collectAsStateWithLifecycle()
     val pendingQrSaveName by viewModel.pendingQrSaveName.collectAsStateWithLifecycle()
     var showImportCodeDialog by remember { mutableStateOf(false) }
+    var showQrScanner by remember { mutableStateOf(false) }
     var importCodeInput by remember { mutableStateOf("") }
     val preview by viewModel.preview.collectAsStateWithLifecycle()
     val readError by viewModel.readError.collectAsStateWithLifecycle()
@@ -145,6 +147,31 @@ fun ImportExportScreen(
         }
     }
 
+    val qrGalleryLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.GetContent(),
+    ) { uri ->
+        if (uri != null) {
+            scope.launch {
+                val decoded = withContext(Dispatchers.IO) { decodeQrFromUri(context, uri) }
+                if (decoded == null) {
+                    snackbar.currentSnackbarData?.dismiss()
+                    snackbar.showSnackbar("未在图片中识别到有效二维码")
+                } else {
+                    viewModel.importFromShareCode(decoded)
+                }
+            }
+        }
+    }
+
+    val externalPayload by ExternalScheduleImportBus.pendingFlow.collectAsStateWithLifecycle()
+    LaunchedEffect(externalPayload) {
+        if (externalPayload != null) {
+            val consumed = ExternalScheduleImportBus.consume()
+            if (consumed != null) {
+                viewModel.readFile(consumed.bytes)
+            }
+        }
+    }
     LaunchedEffect(pendingExport) {
         pendingExport?.let { exportLauncher.launch(it.fileName) }
     }
@@ -235,9 +262,9 @@ fun ImportExportScreen(
                         modifier = Modifier.fillMaxWidth().height(48.dp),
                     ) { Text("AI 拍图 / 文本导入") }
                     LiquidOutlinedButton(
-                        onClick = { importLauncher.launch(arrayOf("application/json")) },
+                        onClick = { importLauncher.launch(arrayOf("*/*")) },
                         modifier = Modifier.fillMaxWidth().height(48.dp),
-                    ) { Text("从 JSON 文件导入") }
+                    ) { Text("从文件导入（JSON / ICS / WakeUp / CSV）") }
                     LiquidOutlinedButton(
                         onClick = {
                             importCodeInput = ""
@@ -245,6 +272,19 @@ fun ImportExportScreen(
                         },
                         modifier = Modifier.fillMaxWidth().height(48.dp),
                     ) { Text("从分享口令导入") }
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
+                        LiquidOutlinedButton(
+                            onClick = { showQrScanner = true },
+                            modifier = Modifier.weight(1f).height(48.dp),
+                        ) { Text("扫码导入") }
+                        LiquidOutlinedButton(
+                            onClick = { qrGalleryLauncher.launch("image/*") },
+                            modifier = Modifier.weight(1f).height(48.dp),
+                        ) { Text("相册识码") }
+                    }
                     readError?.let {
                         Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium)
                     }
@@ -403,6 +443,19 @@ fun ImportExportScreen(
             dismissButton = {
                 TextButton(onClick = { showImportCodeDialog = false }) { Text("取消") }
             },
+        )
+    }
+
+    if (showQrScanner) {
+        QrScannerDialog(
+            onScanned = { decoded ->
+                showQrScanner = false
+                viewModel.importFromShareCode(decoded)
+            },
+            onPickFromGallery = {
+                qrGalleryLauncher.launch("image/*")
+            },
+            onDismiss = { showQrScanner = false },
         )
     }
 }

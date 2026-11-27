@@ -18,6 +18,9 @@ enum class ScheduleHeaderOrder { WEEKDAY_DATE, DATE_WEEKDAY }
 /** 课表网格辅助线线型。 */
 enum class GridLineStyle { SOLID, DASHED, DOTTED }
 
+/** 周课表展示视图模式。 */
+enum class ScheduleViewMode { GRID, TIMELINE }
+
 /**
  * 课表显示设置（有版本，可随设置备份迁移）。
  *
@@ -81,6 +84,10 @@ data class ScheduleDisplaySettings(
     val paletteLight: List<String> = emptyList(),
     /** 深色模式的 12 色板（#RRGGBB）；规则同 [paletteLight]。 */
     val paletteDark: List<String> = emptyList(),
+    /** 周课表视图模式（标准网格 / 按分钟比例时间轴）。 */
+    val viewMode: ScheduleViewMode = ScheduleViewMode.GRID,
+    /** 是否显示晚休分隔行。 */
+    val showEveningBreak: Boolean = false,
 ) {
     /** 规范化范围，避免损坏配置把界面撑爆。 */
     fun sanitized(): ScheduleDisplaySettings {
@@ -144,6 +151,14 @@ data class PinnedClassroomBuilding(
     val key: String get() = "$campusCode|$buildingCode"
 }
 
+/** 上课自动静音/免打扰模式。 */
+enum class AutoSilentMode {
+    OFF,
+    VIBRATE,
+    SILENT,
+    DND,
+}
+
 /** 提醒偏好。 */
 data class ReminderSettings(
     val enabled: Boolean = false,
@@ -171,6 +186,14 @@ data class ReminderSettings(
     val gradeSprintDurationDays: Int = 7,
     /** Wi-Fi 连接、充电或切回前台时顺手触发成绩检查。 */
     val gradeContextTriggerEnabled: Boolean = true,
+    /** 法定节假日自动跳过课程提醒。 */
+    val skipRemindersOnHolidays: Boolean = true,
+    /** 上课自动静音/免打扰模式。 */
+    val autoSilentMode: AutoSilentMode = AutoSilentMode.OFF,
+    /** 豁免上课自动静音的课程键集合。 */
+    val autoSilentExemptCourseKeys: Set<String> = emptySet(),
+    /** 法定节假日跳过自动静音。 */
+    val autoSilentSkipOnHolidays: Boolean = true,
 ) {
     fun sanitized(): ReminderSettings = copy(
         leadMinutes = when (leadMinutes) {
@@ -178,6 +201,7 @@ data class ReminderSettings(
             else -> 10
         },
         disabledCourseKeys = disabledCourseKeys.filter { it.isNotBlank() }.toSet(),
+        autoSilentExemptCourseKeys = autoSilentExemptCourseKeys.filter { it.isNotBlank() }.toSet(),
         gradeCheckIntervalHours = when (gradeCheckIntervalHours) {
             2, 4, 6, 12 -> gradeCheckIntervalHours
             else -> 4

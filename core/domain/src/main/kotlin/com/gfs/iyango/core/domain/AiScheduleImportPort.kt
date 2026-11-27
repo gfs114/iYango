@@ -366,6 +366,31 @@ data class AiProviderConfig(
 }
 
 /**
+ * 可命名、可切换的 AI 接口配置档案。
+ */
+data class AiProviderProfile(
+    val id: String = DEFAULT_ID,
+    val name: String = DEFAULT_NAME,
+    val config: AiProviderConfig = AiProviderConfig(),
+) {
+    companion object {
+        const val DEFAULT_ID = "default"
+        const val DEFAULT_NAME = "默认配置"
+    }
+}
+
+/**
+ * 本机全部 AI 配置档案快照及当前激活档案 ID。
+ */
+data class AiProfilesSnapshot(
+    val profiles: List<AiProviderProfile> = listOf(AiProviderProfile()),
+    val activeProfileId: String = AiProviderProfile.DEFAULT_ID,
+) {
+    val activeProfile: AiProviderProfile
+        get() = profiles.firstOrNull { it.id == activeProfileId } ?: profiles.firstOrNull() ?: AiProviderProfile()
+}
+
+/**
  * 待识别的课表截图载荷。
  */
 data class AiImagePayload(
@@ -424,6 +449,26 @@ interface AiConfigStorePort {
     suspend fun load(): AiProviderConfig
     suspend fun save(config: AiProviderConfig)
     suspend fun clearApiKey()
+
+    suspend fun loadProfiles(): AiProfilesSnapshot {
+        val current = load()
+        return AiProfilesSnapshot(
+            profiles = listOf(AiProviderProfile(config = current)),
+            activeProfileId = AiProviderProfile.DEFAULT_ID,
+        )
+    }
+
+    suspend fun saveProfile(
+        profile: AiProviderProfile,
+        activate: Boolean = true,
+    ): AiProfilesSnapshot {
+        if (activate) save(profile.config)
+        return loadProfiles()
+    }
+
+    suspend fun selectProfile(profileId: String): AiProviderConfig = load()
+
+    suspend fun deleteProfile(profileId: String): AiProfilesSnapshot = loadProfiles()
 }
 
 /**

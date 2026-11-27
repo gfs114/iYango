@@ -88,6 +88,7 @@ object CourseReminderPlanner {
         planRevision: Int = 1,
         /** 课程强调色解析器：默认取课程自带颜色；调用方可注入用户配色覆盖。 */
         colorOf: (Course) -> String = { it.color },
+        isHolidayOffDay: (LocalDate) -> Boolean = { false },
     ): ReminderPlan {
         if (!settings.enabled) {
             return ReminderPlan(skipped = listOf("提醒总开关已关闭"))
@@ -104,6 +105,10 @@ object CourseReminderPlanner {
             BuildingTransferDetector.detectForDay(dayList)
         }
         occurrences.forEach { occurrence ->
+            if (settings.skipRemindersOnHolidays && isHolidayOffDay(occurrence.date)) {
+                skipped += "${occurrence.course.name}：法定节假日自动跳过"
+                return@forEach
+            }
             val startMinute = occurrence.startMinute
             if (startMinute == null) {
                 skipped += "${occurrence.course.name}：时间待定，不安排提醒"

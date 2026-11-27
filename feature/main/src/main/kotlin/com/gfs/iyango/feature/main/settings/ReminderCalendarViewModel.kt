@@ -3,6 +3,8 @@ package com.gfs.iyango.feature.main.settings
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.gfs.iyango.core.domain.AppSettingsPort
+import com.gfs.iyango.core.domain.AutoSilentCoordinatorPort
+import com.gfs.iyango.core.domain.AutoSilentStatus
 import com.gfs.iyango.core.domain.CalendarClearResult
 import com.gfs.iyango.core.domain.CalendarCoordinatorPort
 import com.gfs.iyango.core.domain.CalendarSyncStatus
@@ -10,9 +12,13 @@ import com.gfs.iyango.core.domain.GradeCheckOutcome
 import com.gfs.iyango.core.domain.GradeCheckTrigger
 import com.gfs.iyango.core.domain.GradeMonitorCoordinatorPort
 import com.gfs.iyango.core.domain.GradeMonitorStatus
+import com.gfs.iyango.core.domain.HolidayRepositoryPort
+import com.gfs.iyango.core.domain.NoopAutoSilentCoordinator
 import com.gfs.iyango.core.domain.NoopGradeMonitorCoordinator
+import com.gfs.iyango.core.domain.NoopHolidayRepository
 import com.gfs.iyango.core.domain.ReminderCoordinatorPort
 import com.gfs.iyango.core.domain.ReminderStatus
+import com.gfs.iyango.core.model.AutoSilentMode
 import com.gfs.iyango.core.model.ReminderSettings
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
@@ -33,6 +39,8 @@ class ReminderCalendarViewModel @Inject constructor(
     private val reminderCoordinator: ReminderCoordinatorPort,
     private val calendarCoordinator: CalendarCoordinatorPort,
     private val gradeMonitorCoordinator: GradeMonitorCoordinatorPort = NoopGradeMonitorCoordinator,
+    private val autoSilentCoordinator: AutoSilentCoordinatorPort = NoopAutoSilentCoordinator,
+    private val holidayRepository: HolidayRepositoryPort = NoopHolidayRepository,
 ) : ViewModel() {
 
     private val reminderSettings = appSettings.reminderSettings
@@ -43,19 +51,23 @@ class ReminderCalendarViewModel @Inject constructor(
         calendarCoordinator.status,
         reminderSettings,
         gradeMonitorCoordinator.status,
-    ) { reminder, calendar, reminderPrefs, gradeMonitor ->
+        autoSilentCoordinator.status,
+    ) { reminder, calendar, reminderPrefs, gradeMonitor, autoSilent ->
         ReminderCalendarUiState(
             reminder = reminder,
             calendar = calendar,
             leadMinutes = reminderPrefs.leadMinutes,
             ongoingProgressEnabled = reminderPrefs.ongoingProgressEnabled,
+            skipRemindersOnHolidays = reminderPrefs.skipRemindersOnHolidays,
             gradeMonitor = gradeMonitor,
+            autoSilent = autoSilent,
         )
     }.stateIn(viewModelScope, SharingStarted.Eagerly, ReminderCalendarUiState())
 
     fun refresh() {
         viewModelScope.launch {
             runCatching { reminderCoordinator.refresh() }
+            runCatching { autoSilentCoordinator.refresh() }
             runCatching { calendarCoordinator.refresh() }
             runCatching { gradeMonitorCoordinator.syncSchedule() }
         }
@@ -123,6 +135,35 @@ class ReminderCalendarViewModel @Inject constructor(
     suspend fun checkGradesNow(): GradeCheckOutcome =
         runCatching { gradeMonitorCoordinator.checkOnTrigger(GradeCheckTrigger.MANUAL_CHECK_IN_SETTINGS) }
             .getOrDefault(GradeCheckOutcome.FAILED)
+
+    fun setSkipRemindersOnHolidays(skip: Boolean) {
+        viewModelScope.launch { reminderCoordinator.setSkipRemindersOnHolidays(skip) }
+    }
+
+    suspend fun refreshHolidays(): Boolean {
+        val currentYear = java.time.LocalDate.now().year
+        val r1 = runCatching { holidayRepository.refreshYear(currentYear).isSuccess }.getOrDefault(false)
+        val r2 = runCatching { holidayRepository.refreshYear(currentYear + 1).isSuccess }.getOrDefault(false)
+        runCatching { reminderCoordinator.refresh() }
+        runCatching { autoSilentCoordinator.refresh() }
+        return r1 || r2
+    }
+
+    fun setAutoSilentMode(mode: AutoSilentMode) {
+        viewModelScope.launch { autoSilentCoordinator.setMode(mode) }
+    }
+
+    fun setAutoSilentSkipOnHolidays(skip: Boolean) {
+        viewModelScope.launch { autoSilentCoordinator.setSkipOnHolidays(skip) }
+    }
+
+    fun setAutoSilentCourseExempt(courseKey: String, exempt: Boolean) {
+        viewModelScope.launch { autoSilentCoordinator.setCourseExempt(courseKey, exempt) }
+    }
+
+    fun restoreAutoSilentNow() {
+        viewModelScope.launch { autoSilentCoordinator.restoreNow() }
+    }
 }
 
 /** 提醒与日历页状态。 */
@@ -131,5 +172,7 @@ data class ReminderCalendarUiState(
     val calendar: CalendarSyncStatus = CalendarSyncStatus(),
     val leadMinutes: Int = 10,
     val ongoingProgressEnabled: Boolean = true,
+    val skipRemindersOnHolidays: Boolean = true,
     val gradeMonitor: GradeMonitorStatus = GradeMonitorStatus(),
+    val autoSilent: AutoSilentStatus = AutoSilentStatus(),
 )

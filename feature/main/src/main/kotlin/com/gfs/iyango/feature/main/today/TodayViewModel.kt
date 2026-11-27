@@ -16,7 +16,11 @@ import com.gfs.iyango.core.domain.EffectiveSchedulePort
 import com.gfs.iyango.core.domain.ExamCountdown
 import com.gfs.iyango.core.domain.ExamPhase
 import com.gfs.iyango.core.domain.ExamRepositoryPort
+import com.gfs.iyango.core.domain.ApplyTemporaryDay
+import com.gfs.iyango.core.domain.HolidayMakeupCodec
+import com.gfs.iyango.core.domain.HolidayRepositoryPort
 import com.gfs.iyango.core.domain.MoveOccurrence
+import com.gfs.iyango.core.domain.NoopHolidayRepository
 import com.gfs.iyango.core.domain.RefreshCoordinatorPort
 import com.gfs.iyango.core.domain.RefreshOutcome
 import com.gfs.iyango.core.domain.RefreshResource
@@ -32,6 +36,7 @@ import com.gfs.iyango.core.model.Semester
 import com.gfs.iyango.core.model.SchoolConnectionStatus
 import com.gfs.iyango.core.model.TimeSlot
 import com.gfs.iyango.core.model.Timetable
+import com.gfs.iyango.core.model.DayLabels
 import com.gfs.iyango.feature.main.schedule.CourseDeleteScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import java.time.Clock
@@ -84,6 +89,7 @@ class TodayViewModel @Inject constructor(
     private val clock: Clock,
     private val appSettings: AppSettingsPort,
     auth: SchoolAuthPort,
+    private val holidayRepository: HolidayRepositoryPort = NoopHolidayRepository,
 ) : ViewModel() {
 
     /** 当前课表生效的显示设置（色板等呈现项），供今日页卡片取色。 */
@@ -200,6 +206,12 @@ class TodayViewModel @Inject constructor(
                 val connection = connections.filter { it.status == SchoolConnectionStatus.ACTIVE }.maxByOrNull { it.lastLoginAt }
                     ?: connections.filter { it.status != SchoolConnectionStatus.LOGGED_OUT }.maxByOrNull { it.lastLoginAt }
                 if (schedule is TodayUiState.Ready) schedule.copy(connection = connection) else schedule
+            }.combine(holidayRepository.holidays) { schedule, holidays ->
+                if (schedule is TodayUiState.Ready) {
+                    schedule.copy(todayHoliday = holidays[schedule.today])
+                } else {
+                    schedule
+                }
             })
         }.catch { failure ->
             if (failure is CancellationException) throw failure
@@ -228,6 +240,7 @@ class TodayViewModel @Inject constructor(
             courses = source.days.flatMap { it.baseCourses }.distinctBy { it.id },
             upcomingExams = upcomingExams(source.exams, today, now), effectiveDays = source.days,
             now = now, timing = TodayCourseTiming.project(source.days.flatMap { it.occurrences }, now),
+            isTemporaryDay = todaySchedule.isTemporaryDay,
         )
     }
 
@@ -310,6 +323,30 @@ class TodayViewModel @Inject constructor(
             try { adjustmentRepository.deleteTemporaryDay(ownerTimetableId, date.toString()) }
             catch (cancelled: CancellationException) { throw cancelled }
             catch (_: Exception) { message.value = "恢复未完成，请重试" }
+        }
+    }
+
+    /** 调休补班一键按指定星期课程覆盖当天课表。 */
+    fun applyMakeupWeekday(date: LocalDate, weekday: Int) {
+        val ownerId = (state.value as? TodayUiState.Ready)?.timetable?.id ?: return
+        val holiday = holidayRepository.holidays.value[date]
+        val label = "${holiday?.name ?: "调休"}补${DayLabels.shortLabel(weekday)}"
+        viewModelScope.launch {
+            try {
+                adjustmentRepository.deleteTemporaryDay(ownerId, date.toString())
+                adjustmentRepository.insertTemporaryDay(
+                    ApplyTemporaryDay.create(
+                        timetableId = ownerId,
+                        date = date,
+                        sourceTimetableId = ownerId,
+                        title = HolidayMakeupCodec.encodeTitle(weekday, label),
+                    ),
+                )
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                message.value = "调休课表设置失败，请重试"
+            }
         }
     }
 

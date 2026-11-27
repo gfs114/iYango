@@ -156,6 +156,10 @@ class DefaultSettingsBackup @Inject constructor(
                 gradeSprintUntilMillis = reminder.gradeSprintUntilMillis,
                 gradeSprintDurationDays = reminder.gradeSprintDurationDays,
                 gradeContextTriggerEnabled = reminder.gradeContextTriggerEnabled,
+                skipRemindersOnHolidays = reminder.skipRemindersOnHolidays,
+                autoSilentMode = reminder.autoSilentMode.name,
+                autoSilentExemptCourseKeys = reminder.autoSilentExemptCourseKeys.sorted(),
+                autoSilentSkipOnHolidays = reminder.autoSilentSkipOnHolidays,
             ),
             wallpapers = wallpaperMap,
             creditPlans = exportedCreditPlans,
@@ -446,23 +450,23 @@ internal data class SettingsBackupDocument(
 
 @Serializable
 internal data class DockGlassDto(
-    val blurDp: Float = 2f,
-    val lensWidthDp: Float = 12f,
-    val lensHeightDp: Float = 14f,
+    val blurDp: Float = 8f,
+    val lensWidthDp: Float = 24f,
+    val lensHeightDp: Float = 24f,
     val edgeWidthDp: Float = 0.5f,
-    val edgeBlurDp: Float = 0.6f,
-    val edgeAlphaBase: Float = 0.22f,
-    val edgeAlphaHidden: Float = 0.25f,
-    val edgeAlphaIndicator: Float = 0.35f,
-    val indicatorLensWidthDp: Float = 8f,
-    val indicatorLensHeightDp: Float = 10f,
+    val edgeBlurDp: Float = 0.25f,
+    val edgeAlphaBase: Float = 0.85f,
+    val edgeAlphaHidden: Float = 0.90f,
+    val edgeAlphaIndicator: Float = 1f,
+    val indicatorLensWidthDp: Float = 10f,
+    val indicatorLensHeightDp: Float = 14f,
     val indicatorChromaticAberration: Boolean = true,
-    val indicatorSurfaceAlpha: Float = 0.02f,
-    val indicatorSurfacePressedAlpha: Float = 0.02f,
-    val indicatorShadowRadiusDp: Float = 12f,
-    val indicatorShadowAlpha: Float = 0.3f,
-    val indicatorInnerRadiusDp: Float = 4f,
-    val indicatorInnerAlpha: Float = 0.4f,
+    val indicatorSurfaceAlpha: Float = 0.10f,
+    val indicatorSurfacePressedAlpha: Float = 0.03f,
+    val indicatorShadowRadiusDp: Float = 16f,
+    val indicatorShadowAlpha: Float = 0.35f,
+    val indicatorInnerRadiusDp: Float = 8f,
+    val indicatorInnerAlpha: Float = 0.55f,
     val legacyTier0AlphaLight: Float = 0.55f,
     val legacyTier0AlphaDark: Float = 0.35f,
 ) {
@@ -597,8 +601,8 @@ internal data class LiquidGlassPresetDto(
     val name: String = "自定义方案",
     val globalGlass: GlobalGlassDto = GlobalGlassDto(),
     val dockGlass: DockGlassDto = DockGlassDto(),
-    val dockSurfaceAlphaLight: Float = 0f,
-    val dockSurfaceAlphaDark: Float = 0f,
+    val dockSurfaceAlphaLight: Float = ThemeSettings.DEFAULT_DOCK_SURFACE_ALPHA_LIGHT,
+    val dockSurfaceAlphaDark: Float = ThemeSettings.DEFAULT_DOCK_SURFACE_ALPHA_DARK,
 ) {
     fun toModel(): LiquidGlassPreset = LiquidGlassPreset(
         id = id,
@@ -629,8 +633,8 @@ internal data class ThemeDto(
     val accentHex: String? = null,
     val tintBackground: Boolean = false,
     val themeMode: String = "SYSTEM",
-    val dockSurfaceAlphaLight: Float = 0f,
-    val dockSurfaceAlphaDark: Float = 0f,
+    val dockSurfaceAlphaLight: Float = ThemeSettings.DEFAULT_DOCK_SURFACE_ALPHA_LIGHT,
+    val dockSurfaceAlphaDark: Float = ThemeSettings.DEFAULT_DOCK_SURFACE_ALPHA_DARK,
     val dockGlass: DockGlassDto = DockGlassDto(),
     val globalGlass: GlobalGlassDto = GlobalGlassDto(),
     val savedGlassPresets: List<LiquidGlassPresetDto> = emptyList(),
@@ -776,6 +780,10 @@ internal data class ReminderDto(
     val gradeSprintUntilMillis: Long = 0L,
     val gradeSprintDurationDays: Int = 7,
     val gradeContextTriggerEnabled: Boolean = true,
+    val skipRemindersOnHolidays: Boolean = true,
+    val autoSilentMode: String = com.gfs.iyango.core.model.AutoSilentMode.OFF.name,
+    val autoSilentExemptCourseKeys: List<String> = emptyList(),
+    val autoSilentSkipOnHolidays: Boolean = true,
 ) {
     fun toModel(): ReminderSettings = ReminderSettings(
         enabled = enabled,
@@ -790,6 +798,12 @@ internal data class ReminderDto(
         gradeSprintUntilMillis = gradeSprintUntilMillis,
         gradeSprintDurationDays = gradeSprintDurationDays,
         gradeContextTriggerEnabled = gradeContextTriggerEnabled,
+        skipRemindersOnHolidays = skipRemindersOnHolidays,
+        autoSilentMode = runCatching {
+            com.gfs.iyango.core.model.AutoSilentMode.valueOf(autoSilentMode)
+        }.getOrDefault(com.gfs.iyango.core.model.AutoSilentMode.OFF),
+        autoSilentExemptCourseKeys = autoSilentExemptCourseKeys.filter { it.isNotBlank() }.toSet(),
+        autoSilentSkipOnHolidays = autoSilentSkipOnHolidays,
     ).sanitized()
 }
 

@@ -4,12 +4,29 @@ import com.gfs.iyango.core.domain.CourseRules
 import com.gfs.iyango.core.model.TimeSlot
 
 /** Pure content coordinates, excluding header/rail. At a break an integer row has two edges. */
-data class ScheduleAxisGeometry(val sectionCount: Int, val rowHeight: Float,
-    val lunchAfter: Int? = null, val lunchHeight: Float = 18f) {
+data class ScheduleAxisGeometry(
+    val sectionCount: Int,
+    val rowHeight: Float,
+    val lunchAfter: Int? = null,
+    val lunchHeight: Float = 18f,
+    val eveningAfter: Int? = null,
+    val eveningHeight: Float = 18f,
+) {
     private val boundary = lunchAfter?.takeIf { it in 1 until sectionCount }
-    val totalHeight: Float get() = sectionCount * rowHeight + if (boundary != null) lunchHeight else 0f
-    fun rowToY(row: Float, endEdge: Boolean = false): Float = row * rowHeight +
-        if (boundary != null && (row > boundary || (!endEdge && row == boundary.toFloat()))) lunchHeight else 0f
+    private val eveningBoundary = eveningAfter?.takeIf { it in 1 until sectionCount && it != boundary }
+
+    val totalHeight: Float
+        get() = sectionCount * rowHeight +
+            (if (boundary != null) lunchHeight else 0f) +
+            (if (eveningBoundary != null) eveningHeight else 0f)
+
+    private fun gapBefore(target: Int?, height: Float, row: Float, endEdge: Boolean): Float =
+        if (target != null && (row > target || (!endEdge && row == target.toFloat()))) height else 0f
+
+    fun rowToY(row: Float, endEdge: Boolean = false): Float =
+        row * rowHeight +
+            gapBefore(boundary, lunchHeight, row, endEdge) +
+            gapBefore(eveningBoundary, eveningHeight, row, endEdge)
     fun sectionTop(section: Int): Float = rowToY((section - 1).toFloat())
     fun sectionBottom(section: Int): Float = rowToY(section.toFloat(), true)
     val gridLines: List<Float> get() = (1..sectionCount).flatMap { listOf(sectionTop(it),sectionBottom(it)) }.distinct()
@@ -57,6 +74,20 @@ data class ScheduleAxisGeometry(val sectionCount: Int, val rowHeight: Float,
             }
             return boundaries.distinct().singleOrNull()
         }
+
+        /** Every selected day must agree on one afternoon-to-evening break boundary. */
+        fun commonEveningBoundary(daySlots: List<List<TimeSlot>>): Int? {
+            if (daySlots.isEmpty()) return null
+            val boundaries = daySlots.map { slots ->
+                val valid = validSlots(slots) ?: return null
+                valid.zipWithNext().filter { (a, b) ->
+                    val end = CourseRules.minutes(a.endTime)!!
+                    val start = CourseRules.minutes(b.startTime)!!
+                    b.section == a.section + 1 && end in 1020..1140 && start in 1080..1230 && start - end >= 30
+                }.singleOrNull()?.first?.section ?: return null
+            }
+            return boundaries.distinct().singleOrNull()
+        }
     }
 }
 
@@ -77,6 +108,8 @@ object ScheduleSectionPolicy {
 fun WeekScheduleData.slotsForDay(day: Int): List<TimeSlot> =
     effectiveDays.firstOrNull { it.date == weekStart.plusDays(day - 1L) }?.displayTimeSlots ?: timeSlots
 fun WeekScheduleData.lunchBoundary(): Int? = ScheduleAxisGeometry.commonLunchBoundary(
+    (1..7).map { slotsForDay(it) })
+fun WeekScheduleData.eveningBoundary(): Int? = ScheduleAxisGeometry.commonEveningBoundary(
     (1..7).map { slotsForDay(it) })
 
 /** One rail cannot claim a shared clock when the effective days disagree. */

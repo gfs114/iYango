@@ -67,60 +67,61 @@ data class GlassMaterialSpec(
  */
 object GlassTokens {
 
-    /** 导航玻璃参数（与底部栏 LiquidBottomTabs.DockGlass 完全一致）。 */
+    /** 导航玻璃参数（对齐标准 Apple 液态玻璃：8dp 模糊 + lens(16, 24) + 轻遮罩）。 */
     val Navigation = GlassMaterialSpec(
-        blurDp = 2f,
-        lensWidthDp = 12f,
-        lensHeightDp = 14f,
+        blurDp = 8f,
+        lensWidthDp = 16f,
+        lensHeightDp = 24f,
         edgeWidthDp = 0.5f,
-        edgeBlurDp = 0.6f,
-        edgeAlpha = 0.22f,
-        tintAlphaLight = 0f,
-        tintAlphaDark = 0f,
+        edgeBlurDp = 0.25f,
+        edgeAlpha = 0.85f,
+        tintAlphaLight = 0.36f,
+        tintAlphaDark = 0.34f,
         tier0AlphaLight = 0.55f,
         tier0AlphaDark = 0.35f,
     )
 
-    /** 内容玻璃参数。 */
+    /** 内容玻璃参数（标准液态玻璃：8dp 模糊 + 1:2 轻折射 + 清晰高光）。 */
     val Content = GlassMaterialSpec(
-        blurDp = 0f,
-        lensWidthDp = 10f,
-        lensHeightDp = 12f,
-        edgeWidthDp = 0.6f,
-        edgeBlurDp = 0.8f,
-        edgeAlpha = 0.34f,
-        tintAlphaLight = 0.48f,
+        blurDp = 8f,
+        lensWidthDp = 14f,
+        lensHeightDp = 28f,
+        edgeWidthDp = 0.5f,
+        edgeBlurDp = 0.25f,
+        edgeAlpha = 0.72f,
+        tintAlphaLight = 0.46f,
         tintAlphaDark = 0.38f,
         tier0AlphaLight = 0.95f,
-        tier0AlphaDark = 0f,
+        tier0AlphaDark = 0.88f,
     )
 
-    /** 控件玻璃参数（对齐 LiquidButton：轻模糊 + lens(12, 24)）。 */
+    /** 控件玻璃参数（对齐 Kyant0 LiquidButton：2dp 轻模糊 + lens(12, 24)）。 */
     val Control = GlassMaterialSpec(
-        blurDp = 0f,
+        blurDp = 2f,
         lensWidthDp = 12f,
         lensHeightDp = 24f,
-        edgeWidthDp = 0.6f,
-        edgeBlurDp = 0.6f,
-        edgeAlpha = 0.36f,
-        tintAlphaLight = 0.32f,
-        tintAlphaDark = 0.24f,
+        edgeWidthDp = 0.5f,
+        edgeBlurDp = 0.25f,
+        edgeAlpha = 0.90f,
+        tintAlphaLight = 0.30f,
+        tintAlphaDark = 0.26f,
         tier0AlphaLight = 0.90f,
         tier0AlphaDark = 0.80f,
     )
 
-    /** 浮层玻璃参数。 */
+    /** 浮层玻璃参数（对齐 Kyant0 DialogContent：16dp 模糊 + lens(20, 40) + depthEffect）。 */
     val Overlay = GlassMaterialSpec(
-        blurDp = 0f,
-        lensWidthDp = 14f,
-        lensHeightDp = 20f,
-        edgeWidthDp = 0.75f,
-        edgeBlurDp = 0.8f,
-        edgeAlpha = 0.42f,
-        tintAlphaLight = 0.72f,
-        tintAlphaDark = 0.62f,
+        blurDp = 16f,
+        lensWidthDp = 20f,
+        lensHeightDp = 40f,
+        edgeWidthDp = 0.6f,
+        edgeBlurDp = 0.3f,
+        edgeAlpha = 0.85f,
+        tintAlphaLight = 0.60f,
+        tintAlphaDark = 0.42f,
         tier0AlphaLight = 0.96f,
         tier0AlphaDark = 0.90f,
+        depthEffect = true,
     )
 
     /** 按类别取参数。 */

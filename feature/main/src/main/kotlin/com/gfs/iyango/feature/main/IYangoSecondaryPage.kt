@@ -22,6 +22,7 @@ import com.gfs.iyango.feature.main.about.AboutScreen
 import com.gfs.iyango.feature.main.about.RuntimeLogScreen
 import com.gfs.iyango.feature.main.ai.AiAssistantScreen
 import com.gfs.iyango.feature.main.ai.AiConfigScreen
+import com.gfs.iyango.feature.main.ai.AiProviderDetailScreen
 import com.gfs.iyango.feature.main.classroom.ClassroomQueryScreen
 import com.gfs.iyango.feature.main.coursemanage.CourseManageScreen
 import com.gfs.iyango.feature.main.creditprogress.CreditProgressScreen
@@ -49,6 +50,7 @@ import com.gfs.iyango.feature.main.settings.WallpaperLayer
 import com.gfs.iyango.feature.main.settings.WallpaperScreen
 import com.gfs.iyango.feature.main.settings.toGlassPalette
 import com.gfs.iyango.feature.main.synchistory.SyncHistoryScreen
+import com.gfs.iyango.feature.main.timetable.TimetableCompareScreen
 import com.gfs.iyango.feature.main.timetable.TimetableManageScreen
 import com.gfs.iyango.feature.main.today.HomeSettingsScreen
 
@@ -160,6 +162,14 @@ private fun SecondaryRouteContent(
         is SecondaryPageRoute.Editor -> CourseEditorScreen(onBack = onBack)
         is SecondaryPageRoute.CourseRaw -> CourseRawScreen(onBack = onBack)
         is SecondaryPageRoute.Display -> DisplaySettingsScreen(onBack = onBack)
+        is SecondaryPageRoute.Classroom -> ClassroomQueryScreen(
+            onBack = onBack,
+            onOpenSchool = { openRoute("school") },
+        )
+        is SecondaryPageRoute.AiProviderDetail -> AiProviderDetailScreen(
+            profileId = route.profileId,
+            onBack = onBack,
+        )
         is SecondaryPageRoute.Plain -> {
             val category = MineCategory.entries.firstOrNull { it.route == route.id }
             when {
@@ -209,13 +219,24 @@ private fun SecondaryRouteContent(
                 )
                 route.id == "synchistory" -> SyncHistoryScreen(onBack = onBack)
                 route.id == "exams" -> ExamListScreen(onBack = onBack)
-                route.id == "classroom" -> ClassroomQueryScreen(
-                    onBack = onBack,
-                    onOpenSchool = { openRoute("school") },
-                )
                 route.id == "timetable" -> TimetableManageScreen(
                     onBack = onBack,
                     onOpenSync = { openRoute("schoolsync") },
+                    onOpenCompare = { openRoute("timetablecompare") },
+                )
+                route.id == "timetablecompare" -> TimetableCompareScreen(
+                    onBack = onBack,
+                    onOpenImport = { openRoute("importexport") },
+                    onOpenClassroom = { week, day, startSec, endSec ->
+                        openRoute(
+                            SecondaryPageRoute.Classroom(
+                                week = week,
+                                dayOfWeek = day,
+                                startSection = startSec,
+                                endSection = endSec,
+                            ).route,
+                        )
+                    },
                 )
                 route.id == "semester" -> SemesterManageScreen(onBack = onBack)
                 route.id == "homesettings" -> HomeSettingsScreen(onBack = onBack)
@@ -253,7 +274,12 @@ private fun SecondaryRouteContent(
                     onBack = onBack,
                     onOpenAiConfig = { openRoute("aiconfig") },
                 )
-                route.id == "aiconfig" -> AiConfigScreen(onBack = onBack)
+                route.id == "aiconfig" -> AiConfigScreen(
+                    onBack = onBack,
+                    onOpenProviderDetail = { profileId ->
+                        openRoute(SecondaryPageRoute.AiProviderDetail(profileId).route)
+                    },
+                )
                 route.id == "aiassistant" -> AiAssistantScreen(
                     onBack = onBack,
                     onOpenAiConfig = { openRoute("aiconfig") },

@@ -123,6 +123,7 @@ data class WeekScheduleData(
     val timeRail: List<TimeRailRow> = emptyList(),
     val effectiveDays: List<com.gfs.iyango.core.domain.EffectiveScheduleDay> = emptyList(),
     val exams: List<ScheduleExam> = emptyList(),
+    val holidays: Map<LocalDate, com.gfs.iyango.core.domain.HolidayDayInfo> = emptyMap(),
 ) {
     /** 学期名；未设置学期时为 null。 */
     val semesterName: String? get() = semester?.name

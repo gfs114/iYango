@@ -54,12 +54,14 @@ import com.gfs.iyango.core.designsystem.motion.LocalMotionEnabled
 import com.gfs.iyango.core.designsystem.theme.LocalBrand
 import com.gfs.iyango.core.domain.DockGlassSettings
 import com.kyant.backdrop.Backdrop
+import com.kyant.backdrop.BackdropEffectScope
 import com.kyant.backdrop.backdrops.layerBackdrop
 import com.kyant.backdrop.backdrops.rememberCombinedBackdrop
 import com.kyant.backdrop.backdrops.rememberLayerBackdrop
 import com.kyant.backdrop.drawBackdrop
 import com.kyant.backdrop.effects.blur
 import com.kyant.backdrop.effects.lens
+import com.kyant.backdrop.effects.vibrancy
 import com.kyant.backdrop.highlight.Highlight
 import com.kyant.backdrop.highlight.HighlightStyle
 import com.kyant.backdrop.isRenderEffectSupported
@@ -92,65 +94,59 @@ internal object DockGeometry {
 }
 
 /**
- * Dock 玻璃材质参数（唯一定义点；回退旧观感时改这里）。
- *
- * 依据酷安 16.6.5 `liquid.*` + 参考图实测：玻璃内部应比页面背景**暗**（而非更亮的灰板）、
- * 只有方向性细亮边（不是整圈描边）、蒙层极轻、折射量收敛。
+ * Dock 玻璃材质参数（对齐 Kyant0 标准 Apple 液态玻璃 + 暗色黑玻璃基线）。
  */
 internal object DockGlass {
-    /** 基础条与隐藏层背景模糊半径 dp（原 8 → 14，背景文字糊成块才像玻璃）。 */
-    // [更透] 去掉 vibrancy（饱和 ×1.5 会让玻璃发彩色、显得"厚"）。
-    // [纯窗口] 模糊置 0：库内 `blur(radius<=0)` 直接返回，底栏只剩 lens 折射 + 细亮边，
-    // 背后内容完全清晰（可读性最差，但最"透"）。
-    const val BLUR_DP = 3f
+    /** 基础条与隐藏层背景模糊半径 dp（8dp 虚化，与 Kyant0 LiquidBottomTabs 对齐）。 */
+    const val BLUR_DP = 8f
 
-    /** 基础条透镜宽 dp（[更透] 16 → 12，减少"厚玻璃"形变）。 */
-    const val LENS_WIDTH_DP = 12f
+    /** 基础条透镜宽 dp。 */
+    const val LENS_WIDTH_DP = 24f
 
-    /** 基础条透镜高 dp（[更透] 18 → 14）。 */
-    const val LENS_HEIGHT_DP = 14f
+    /** 基础条透镜高 dp。 */
+    const val LENS_HEIGHT_DP = 24f
 
-    /** 细亮边宽度 dp（[更透] 0.75 → 0.5）。 */
+    /** 细亮边宽度 dp。 */
     const val EDGE_WIDTH_DP = 0.5f
 
-    /** 细亮边模糊半径 dp。 */
-    const val EDGE_BLUR_DP = 0.6f
+    /** 细亮边模糊半径 dp（0.25dp 锐利反光，对齐 Highlight.Default）。 */
+    const val EDGE_BLUR_DP = 0.25f
 
-    /** 基础条细亮边不透明度（[更透] 0.35 → 0.22）。 */
-    const val EDGE_ALPHA_BASE = 0.22f
+    /** 基础条细亮边不透明度。 */
+    const val EDGE_ALPHA_BASE = 0.85f
 
-    /** 隐藏层细亮边峰值（按压时 progress * 0.25）。 */
-    const val EDGE_ALPHA_HIDDEN = 0.25f
+    /** 隐藏层细亮边峰值（按压时 progress * 0.90）。 */
+    const val EDGE_ALPHA_HIDDEN = 0.90f
 
-    /** 指示器细亮边峰值（按压时 progress * 0.35）。 */
-    const val EDGE_ALPHA_INDICATOR = 0.35f
+    /** 指示器细亮边峰值（按压时 progress * 1.0）。 */
+    const val EDGE_ALPHA_INDICATOR = 1f
 
-    /** 指示器常态底色不透明度（[更透] 0.03 → 0.02）。 */
-    const val INDICATOR_SURFACE_ALPHA = 0.02f
+    /** 指示器常态底色不透明度。 */
+    const val INDICATOR_SURFACE_ALPHA = 0.10f
 
     /** 指示器旧系统 tier 0 底色（无折射时保证可见）。 */
     const val INDICATOR_SURFACE_ALPHA_LEGACY = 0.12f
 
-    /** 指示器按压加深层（原 0.03 → 0.02，乘 progress）。 */
-    const val INDICATOR_SURFACE_PRESSED_ALPHA = 0.02f
+    /** 指示器按压加深层（乘 progress）。 */
+    const val INDICATOR_SURFACE_PRESSED_ALPHA = 0.03f
 
-    /** 指示器投影半径 dp（原随 progress 变化 → 固定 12dp）。 */
-    const val INDICATOR_SHADOW_RADIUS_DP = 12f
+    /** 指示器投影半径 dp。 */
+    const val INDICATOR_SHADOW_RADIUS_DP = 16f
 
-    /** 指示器投影峰值（按压时 progress * 0.3）。 */
-    const val INDICATOR_SHADOW_ALPHA = 0.3f
+    /** 指示器投影峰值（按压时 progress * 0.35）。 */
+    const val INDICATOR_SHADOW_ALPHA = 0.35f
 
-    /** 指示器内阴影峰值半径 dp（原 8 → 4，乘 progress）。 */
-    const val INDICATOR_INNER_RADIUS_DP = 4f
+    /** 指示器内阴影峰值半径 dp（乘 progress）。 */
+    const val INDICATOR_INNER_RADIUS_DP = 8f
 
-    /** 指示器内阴影峰值（[更透] progress * 0.4）。 */
-    const val INDICATOR_INNER_ALPHA = 0.4f
+    /** 指示器内阴影峰值（progress * 0.55）。 */
+    const val INDICATOR_INNER_ALPHA = 0.55f
 
-    /** 蒙层默认值——亮（默认 0 = 无蒙层，纯折射玻璃）。 */
-    const val SURFACE_ALPHA_LIGHT_DEFAULT = 0f
+    /** 蒙层默认值——亮（标准 Apple 液态玻璃 0.40）。 */
+    const val SURFACE_ALPHA_LIGHT_DEFAULT = 0.40f
 
-    /** 蒙层默认值——暗（默认 0 = 无蒙层，纯折射玻璃；仅 tier 0 旧系统会用兜底底色）。 */
-    const val SURFACE_ALPHA_DARK_DEFAULT = 0f
+    /** 蒙层默认值——暗（标准 Apple 液态玻璃 0.36）。 */
+    const val SURFACE_ALPHA_DARK_DEFAULT = 0.36f
 
     /** tier 1（Android 12：有模糊无透镜）蒙层增益。 */
     const val LEGACY_TIER1_ALPHA_GAIN = 1.4f
@@ -173,9 +169,9 @@ fun LiquidBottomTabs(
     tabsCount: Int,
     modifier: Modifier = Modifier,
     interactive: Boolean = true,
-    /** 可读性蒙层不透明度（亮色模式），0..0.8；0 = 无遮罩（纯折射）。默认 0.06。 */
+    /** 可读性蒙层不透明度（亮色模式），0..0.8；0 = 无遮罩（纯折射）。默认 0.40。 */
     surfaceAlphaLight: Float = DockGlass.SURFACE_ALPHA_LIGHT_DEFAULT,
-    /** 可读性蒙层不透明度（暗色模式），0..0.8；0 = 无遮罩。默认 0.20。 */
+    /** 可读性蒙层不透明度（暗色模式），0..0.8；0 = 无遮罩。默认 0.36。 */
     surfaceAlphaDark: Float = DockGlass.SURFACE_ALPHA_DARK_DEFAULT,
     /** 液态玻璃高级视觉参数（模糊、透镜、细亮边与指示器阴影等）。 */
     glassSettings: DockGlassSettings = DockGlassSettings(),
@@ -415,10 +411,10 @@ fun LiquidBottomTabs(
                             backdrop = backdrop,
                             shape = { Capsule() },
                             effects = {
-                                blur(glass.blurDp.dp.toPx())
-                                lens(
-                                    glass.lensWidthDp.dp.toPx(),
-                                    glass.lensHeightDp.dp.toPx()
+                                applyDockEffects(
+                                    blurDp = glass.blurDp,
+                                    lensWidthDp = glass.lensWidthDp,
+                                    lensHeightDp = glass.lensHeightDp,
                                 )
                             },
                             highlight = {
@@ -466,13 +462,11 @@ fun LiquidBottomTabs(
                                 shape = { Capsule() },
                                 effects = {
                                     val progress = dampedDragAnimation.pressProgress
-                                    blur(glass.blurDp.dp.toPx())
-                                    if (progress > 0.001f) {
-                                        lens(
-                                            glass.lensWidthDp.dp.toPx() * progress,
-                                            glass.lensHeightDp.dp.toPx() * progress
-                                        )
-                                    }
+                                    applyDockEffects(
+                                        blurDp = glass.blurDp,
+                                        lensWidthDp = if (progress > 0.001f) glass.lensWidthDp * progress else 0f,
+                                        lensHeightDp = if (progress > 0.001f) glass.lensHeightDp * progress else 0f,
+                                    )
                                 },
                                 highlight = {
                                     val progress = dampedDragAnimation.pressProgress
@@ -593,5 +587,31 @@ fun LiquidBottomTabs(
                 )
             }
         }
+    }
+}
+
+private fun BackdropEffectScope.applyDockEffects(
+    blurDp: Float,
+    lensWidthDp: Float,
+    lensHeightDp: Float,
+) {
+    val hasBlur = blurDp > 0.01f
+    val hasLens = lensWidthDp > 0.01f && lensHeightDp > 0.01f
+    if (!hasBlur && !hasLens) return
+
+    vibrancy()
+    if (hasBlur) {
+        blur(blurDp.dp.toPx())
+    }
+    if (hasLens) {
+        val rawHeight = lensWidthDp.dp.toPx()
+        val rawAmount = lensHeightDp.dp.toPx()
+        val maxLensHeight = (size.minDimension * 0.45f).coerceAtLeast(0f)
+        val scale = if (rawHeight > maxLensHeight && rawHeight > 0f) {
+            maxLensHeight / rawHeight
+        } else {
+            1f
+        }
+        lens(rawHeight * scale, rawAmount * scale)
     }
 }

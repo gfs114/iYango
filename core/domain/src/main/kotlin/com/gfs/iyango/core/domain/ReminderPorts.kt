@@ -34,6 +34,7 @@ data class ReminderStatus(
     val failures: List<String> = emptyList(),
     val lastSyncAt: Long = 0,
     val courses: List<ReminderCourseOption> = emptyList(),
+    val skipRemindersOnHolidays: Boolean = true,
 )
 
 /** 平台提醒排程结果。 */
@@ -100,4 +101,7 @@ interface ReminderCoordinatorPort {
 
     /** 单门课程提醒开关；[key] 为 [CourseReminderPlanner.courseKey]。 */
     suspend fun setCourseEnabled(key: String, enabled: Boolean)
+
+    /** 开关“法定节假日自动跳过提醒”。 */
+    suspend fun setSkipRemindersOnHolidays(skip: Boolean) {}
 }

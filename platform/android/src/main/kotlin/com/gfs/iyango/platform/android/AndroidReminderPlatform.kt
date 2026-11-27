@@ -352,6 +352,15 @@ internal object ReminderNotifications {
             // 同一实例原地更新，不重复响铃。
             .setOnlyAlertOnce(true)
             .addAction(0, "知道了", dismissPending)
+            .apply {
+                if (!entry.isExam && AndroidAutoSilentPlatform.isOccurrenceManaged(context, entry.occurrenceId)) {
+                    addAction(
+                        0,
+                        "取消本节静音",
+                        AndroidAutoSilentPlatform.cancelOccurrencePendingIntent(context, entry.occurrenceId),
+                    )
+                }
+            }
             .setDeleteIntent(dismissPending)
             .apply { contentIntentOf(context, entry)?.let { setContentIntent(it) } }
         // 课程强调色（荣耀胶囊规范：高亮色对比度 >= 4.5:1）；解析失败不设色，保持系统默认。
@@ -997,6 +1006,9 @@ class SystemEventReceiver : android.content.BroadcastReceiver() {
     @javax.inject.Inject
     lateinit var gradeMonitorCoordinator: com.gfs.iyango.core.domain.GradeMonitorCoordinatorPort
 
+    @javax.inject.Inject
+    lateinit var autoSilentCoordinator: com.gfs.iyango.core.domain.AutoSilentCoordinatorPort
+
     override fun onReceive(context: Context, intent: Intent) {
         when (intent.action) {
             Intent.ACTION_BOOT_COMPLETED,
@@ -1012,6 +1024,7 @@ class SystemEventReceiver : android.content.BroadcastReceiver() {
         CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
             try {
                 runCatching { reminderCoordinator.refresh() }
+                runCatching { autoSilentCoordinator.refresh() }
                 runCatching { calendarCoordinator.refresh() }
                 runCatching { gradeMonitorCoordinator.syncSchedule() }
                 runCatching { WidgetRefreshAlarm.refreshAll(context) }

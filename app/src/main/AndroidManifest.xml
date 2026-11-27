@@ -9,8 +9,14 @@
     <uses-permission android:name="android.permission.POST_PROMOTED_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
+    <uses-permission android:name="android.permission.ACCESS_NOTIFICATION_POLICY" />
     <uses-permission android:name="android.permission.READ_CALENDAR" />
     <uses-permission android:name="android.permission.WRITE_CALENDAR" />
+    <uses-permission android:name="android.permission.CAMERA" />
+
+    <uses-feature
+        android:name="android.hardware.camera"
+        android:required="false" />
 
     <application
         android:name=".IYangoApplication"
@@ -40,6 +46,30 @@
                 <data
                     android:host="open"
                     android:scheme="iyango" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="content" />
+                <data android:scheme="file" />
+                <data android:mimeType="text/calendar" />
+                <data android:mimeType="text/csv" />
+                <data android:mimeType="application/json" />
+                <data android:pathPattern=".*\\.ics" />
+                <data android:pathPattern=".*\\.csv" />
+                <data android:pathPattern=".*\\.wakeup_schedule" />
+                <data android:pathPattern=".*\\.json" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="text/calendar" />
+                <data android:mimeType="text/csv" />
+                <data android:mimeType="application/json" />
+                <data android:mimeType="text/plain" />
             </intent-filter>
             <meta-data
                 android:name="android.app.shortcuts"
@@ -158,10 +188,25 @@
             android:exported="false"
             android:permission="android.permission.BIND_REMOTEVIEWS" />
 
+        <service
+            android:name="com.gfs.iyango.platform.android.NextClassTileService"
+            android:exported="true"
+            android:icon="@drawable/ic_stat_course"
+            android:label="@string/qs_tile_next_class_label"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
+        </service>
+
         <receiver android:name="com.gfs.iyango.platform.android.WidgetRefreshReceiver" android:exported="false" />
 
         <receiver
             android:name="com.gfs.iyango.platform.android.ReminderReceiver"
+            android:exported="false" />
+
+        <receiver
+            android:name="com.gfs.iyango.platform.android.AutoSilentReceiver"
             android:exported="false" />
 
         <receiver

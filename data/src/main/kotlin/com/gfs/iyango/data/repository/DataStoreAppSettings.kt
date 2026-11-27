@@ -230,6 +230,8 @@ class DataStoreAppSettings internal constructor(
         val backgroundColorHex: String = "",
         val paletteLight: List<String> = emptyList(),
         val paletteDark: List<String> = emptyList(),
+        val viewMode: String = "GRID",
+        val showEveningBreak: Boolean = false,
     ) {
         fun toModel(): ScheduleDisplaySettings {
             val resolvedStyle = gridLineStyle.trim().takeIf { it.isNotEmpty() }
@@ -274,7 +276,10 @@ class DataStoreAppSettings internal constructor(
             backgroundColorHex = backgroundColorHex,
             paletteLight = paletteLight,
             paletteDark = paletteDark,
-        )
+            viewMode = runCatching { com.gfs.iyango.core.model.ScheduleViewMode.valueOf(viewMode) }
+                .getOrDefault(com.gfs.iyango.core.model.ScheduleViewMode.GRID),
+            showEveningBreak = showEveningBreak,
+        ).sanitized()
         }
     }
 
@@ -317,6 +322,10 @@ class DataStoreAppSettings internal constructor(
         val gradeSprintUntilMillis: Long = 0L,
         val gradeSprintDurationDays: Int = 7,
         val gradeContextTriggerEnabled: Boolean = true,
+        val skipRemindersOnHolidays: Boolean = true,
+        val autoSilentMode: String = com.gfs.iyango.core.model.AutoSilentMode.OFF.name,
+        val autoSilentExemptCourseKeys: List<String> = emptyList(),
+        val autoSilentSkipOnHolidays: Boolean = true,
     ) {
         fun toModel(): ReminderSettings = ReminderSettings(
             enabled = enabled,
@@ -332,6 +341,12 @@ class DataStoreAppSettings internal constructor(
             gradeSprintUntilMillis = gradeSprintUntilMillis,
             gradeSprintDurationDays = gradeSprintDurationDays,
             gradeContextTriggerEnabled = gradeContextTriggerEnabled,
+            skipRemindersOnHolidays = skipRemindersOnHolidays,
+            autoSilentMode = runCatching {
+                com.gfs.iyango.core.model.AutoSilentMode.valueOf(autoSilentMode)
+            }.getOrDefault(com.gfs.iyango.core.model.AutoSilentMode.OFF),
+            autoSilentExemptCourseKeys = autoSilentExemptCourseKeys.toSet(),
+            autoSilentSkipOnHolidays = autoSilentSkipOnHolidays,
         )
     }
 
@@ -475,6 +490,8 @@ private fun ScheduleDisplaySettings.toDto(): DataStoreAppSettings.DisplaySetting
         backgroundColorHex = backgroundColorHex,
         paletteLight = paletteLight,
         paletteDark = paletteDark,
+        viewMode = viewMode.name,
+        showEveningBreak = showEveningBreak,
     )
 
 private fun ReminderSettings.toDto(): DataStoreAppSettings.ReminderDto =
@@ -492,6 +509,10 @@ private fun ReminderSettings.toDto(): DataStoreAppSettings.ReminderDto =
         gradeSprintUntilMillis = gradeSprintUntilMillis,
         gradeSprintDurationDays = gradeSprintDurationDays,
         gradeContextTriggerEnabled = gradeContextTriggerEnabled,
+        skipRemindersOnHolidays = skipRemindersOnHolidays,
+        autoSilentMode = autoSilentMode.name,
+        autoSilentExemptCourseKeys = autoSilentExemptCourseKeys.sorted(),
+        autoSilentSkipOnHolidays = autoSilentSkipOnHolidays,
     )
 
 private fun CalendarSettings.toDto(): DataStoreAppSettings.CalendarDto =

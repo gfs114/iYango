@@ -1,18 +1,26 @@
 package com.gfs.iyango
 
 import android.content.Intent
+import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.runtime.getValue
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.lifecycleScope
+import com.gfs.iyango.core.domain.ExternalScheduleImportBus
+import com.gfs.iyango.core.domain.ExternalScheduleImportPayload
 import com.gfs.iyango.feature.main.IYangoMainApp
 import com.gfs.iyango.platform.android.AndroidGradeNotificationPlatform
 import com.gfs.iyango.platform.android.LaunchIntents
 import com.gfs.iyango.platform.android.ReminderIntents
 import dagger.hilt.android.AndroidEntryPoint
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * 主 Activity 入口（多 Activity 架构 P2）：承载今日/课表/成绩/我的四个主 Tab。
@@ -58,11 +66,64 @@ class MainActivity : ComponentActivity() {
             AndroidGradeNotificationPlatform.dismissNotification(this, gradeNotifId)
             intent?.removeExtra(AndroidGradeNotificationPlatform.EXTRA_NOTIFICATION_ID)
         }
+        val externalUri = extractExternalScheduleUri(intent)
+        if (externalUri != null) {
+            intent?.action = null
+            intent?.data = null
+            lifecycleScope.launch(Dispatchers.IO) {
+                val bytes = readCappedBytes(externalUri)
+                if (bytes != null) {
+                    val fileName = externalUri.lastPathSegment?.substringAfterLast('/') ?: "schedule"
+                    ExternalScheduleImportBus.offer(ExternalScheduleImportPayload(fileName, bytes))
+                    withContext(Dispatchers.Main) {
+                        pendingRoute.value = "importexport"
+                    }
+                }
+            }
+            return
+        }
         val parsed = consumeExternalIntent(intent) ?: return
         parsed.courseId?.let { pendingCourseId.value = it }
         parsed.route?.let { pendingRoute.value = it }
         parsed.tab?.let { pendingTab.value = it }
     }
+
+    private fun extractExternalScheduleUri(intent: Intent?): Uri? {
+        if (intent == null) return null
+        return when (intent.action) {
+            Intent.ACTION_VIEW -> {
+                val uri = intent.data ?: return null
+                if (uri.scheme == LaunchIntents.URI_SCHEME) null else uri
+            }
+            Intent.ACTION_SEND -> {
+                @Suppress("DEPRECATION")
+                val extraStream = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    intent.getParcelableExtra(Intent.EXTRA_STREAM, Uri::class.java)
+                } else {
+                    intent.getParcelableExtra(Intent.EXTRA_STREAM) as? Uri
+                }
+                extraStream ?: intent.clipData?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.uri
+            }
+            else -> null
+        }
+    }
+
+    private fun readCappedBytes(uri: Uri): ByteArray? = runCatching {
+        val maxBytes = 5 * 1024 * 1024
+        contentResolver.openInputStream(uri)?.use { stream ->
+            val out = java.io.ByteArrayOutputStream()
+            val buf = ByteArray(8192)
+            var total = 0
+            while (true) {
+                val n = stream.read(buf)
+                if (n <= 0) break
+                total += n
+                if (total > maxBytes) return null
+                out.write(buf, 0, n)
+            }
+            out.toByteArray()
+        }
+    }.getOrNull()
 
     internal data class ParsedExternalTarget(
         val courseId: Long? = null,

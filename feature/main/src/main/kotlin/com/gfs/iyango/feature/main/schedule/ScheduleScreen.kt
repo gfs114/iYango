@@ -122,6 +122,7 @@ fun ScheduleScreen(
     val temporaryDays by viewModel.temporaryDays.collectAsStateWithLifecycle(minActiveState = androidx.lifecycle.Lifecycle.State.CREATED)
     val displaySettings by viewModel.displaySettings.collectAsStateWithLifecycle(minActiveState = androidx.lifecycle.Lifecycle.State.CREATED)
     val wallpaper by viewModel.wallpaper.collectAsStateWithLifecycle(minActiveState = androidx.lifecycle.Lifecycle.State.CREATED)
+    val autoSilentExemptKeys by viewModel.autoSilentExemptKeys.collectAsStateWithLifecycle(minActiveState = androidx.lifecycle.Lifecycle.State.CREATED)
     val message by viewModel.message.collectAsStateWithLifecycle(minActiveState = androidx.lifecycle.Lifecycle.State.CREATED)
     val pullMessage by viewModel.pullMessage.collectAsStateWithLifecycle(minActiveState = androidx.lifecycle.Lifecycle.State.CREATED)
 
@@ -208,6 +209,7 @@ fun ScheduleScreen(
         timetables = timetables,
         temporaryDays = temporaryDays,
         onApplyTemporaryDay = viewModel::applyTemporaryDay,
+        onApplyMakeupWeekday = viewModel::applyMakeupWeekday,
         onClearTemporaryDay = viewModel::clearTemporaryDay,
         display = displaySettings,
         onUpdateDisplay = viewModel::updateDisplaySettings,
@@ -218,6 +220,8 @@ fun ScheduleScreen(
         onDetailSnapshot = viewModel::captureDetail,
         onPagerWeek = viewModel::pickPagerWeek,
         onConfirmMove = viewModel::confirmDrag,
+        autoSilentExemptKeys = autoSilentExemptKeys,
+        onQuickToggleAutoSilent = viewModel::toggleCourseAutoSilentExempt,
     )
 }
 
@@ -256,6 +260,7 @@ fun ScheduleContent(
     timetables: List<Timetable> = emptyList(),
     temporaryDays: List<TemporaryDay> = emptyList(),
     onApplyTemporaryDay: (LocalDate, Long) -> Unit = { _, _ -> },
+    onApplyMakeupWeekday: (LocalDate, Int) -> Unit = { _, _ -> },
     onClearTemporaryDay: (LocalDate) -> Unit = {},
     onOpenDisplaySettings: () -> Unit = {},
     onOpenSync: () -> Unit = {},
@@ -270,6 +275,8 @@ fun ScheduleContent(
     onDetailSnapshot: (WeekScheduleData) -> Unit = {},
     onPagerWeek: (ScheduleContext, Int, Long) -> Unit = { _, week, _ -> onPickWeek(week) },
     onConfirmMove: suspend (ScheduleDropCandidate) -> String? = { "调整不可用" },
+    autoSilentExemptKeys: Set<String> = emptySet(),
+    onQuickToggleAutoSilent: (Course) -> Unit = {},
 ) {
     val overlayState = remember { ScheduleOverlayState() }
     val ready = state as? ScheduleUiState.Ready
@@ -417,6 +424,17 @@ fun ScheduleContent(
                                 onGroupClick = onGroupClickCallback,
                                 onInteractionLocked = onInteractionLockedCallback, onConfirmMove = onConfirmMove,
                                 onPageSettled = { settledPage = it },
+                                autoSilentExemptKeys = autoSilentExemptKeys,
+                                onQuickCancelOccurrence = { data, block ->
+                                    onDeleteCourse(
+                                        block.course,
+                                        CourseDeleteScope.CANCEL_THIS_WEEK,
+                                        data.displayedWeek,
+                                        block.occurrence?.anchorDate?.toString().orEmpty(),
+                                    )
+                                },
+                                onQuickToggleAutoSilent = onQuickToggleAutoSilent,
+                                onQuickEditCourse = onEditCourse,
                             )
                         }
                     }
@@ -467,6 +485,7 @@ fun ScheduleContent(
         onDeleteCourse = onDeleteCourse,
         onApplyAdjustment = onApplyAdjustment,
         onApplyTemporaryDay = onApplyTemporaryDay,
+        onApplyMakeupWeekday = onApplyMakeupWeekday,
         onClearTemporaryDay = onClearTemporaryDay,
     )
 }
@@ -519,6 +538,7 @@ private fun ScheduleOverlays(
     onDeleteCourse: (Course, CourseDeleteScope, Int, String) -> Unit,
     onApplyAdjustment: (Course, Int, Int, Int, Int, String, Boolean, com.gfs.iyango.core.domain.EffectiveScheduleDay?) -> Unit,
     onApplyTemporaryDay: (LocalDate, Long) -> Unit,
+    onApplyMakeupWeekday: (LocalDate, Int) -> Unit,
     onClearTemporaryDay: (LocalDate) -> Unit,
 ) {
     if (overlayState.showWeekPicker) {
@@ -641,6 +661,10 @@ private fun ScheduleOverlays(
             temporaryDays = temporaryDays,
             onApply = { date, sourceId ->
                 onApplyTemporaryDay(date, sourceId)
+                overlayState.showTemporaryDay = false
+            },
+            onApplyMakeupWeekday = { date, weekday ->
+                onApplyMakeupWeekday(date, weekday)
                 overlayState.showTemporaryDay = false
             },
             onClear = { date ->
@@ -848,17 +872,26 @@ private fun TemporaryDaySheet(
     timetables: List<Timetable>,
     temporaryDays: List<TemporaryDay>,
     onApply: (LocalDate, Long) -> Unit,
+    onApplyMakeupWeekday: (LocalDate, Int) -> Unit = { _, _ -> },
     onClear: (LocalDate) -> Unit,
     onDismiss: () -> Unit,
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     var selectedDate by remember { mutableStateOf(data.weekStart) }
+    var makeupMode by remember { mutableStateOf(false) }
+    var makeupWeekday by remember { mutableStateOf(1) }
     var sourceId by remember { mutableStateOf(timetables.firstOrNull()?.id ?: 0L) }
     val selectedDay = data.effectiveDays.firstOrNull { it.date == selectedDate }
+    val selectedHoliday = data.holidays[selectedDate]
     val owner = selectedDay?.timetable
     val availableSources = timetables.filter { it.id != owner?.id }
-    LaunchedEffect(selectedDate, owner?.id, availableSources) {
+    val existingRecord = temporaryDays.firstOrNull { it.date == selectedDate.toString() && it.timetableId == owner?.id }
+    LaunchedEffect(selectedDate, owner?.id, availableSources, selectedHoliday) {
         if (availableSources.none { it.id == sourceId }) sourceId = availableSources.firstOrNull()?.id ?: 0
+        if (selectedHoliday?.isOffDay == false && selectedHoliday.makeupWeekday != null) {
+            makeupWeekday = selectedHoliday.makeupWeekday!!
+            makeupMode = true
+        }
     }
     val existing = selectedDay?.isTemporaryDay == true
 
@@ -874,12 +907,7 @@ private fun TemporaryDaySheet(
                 .padding(bottom = 24.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            GlassOverlayHeader(title = "临时整天课表", contentPadding = PaddingValues(0.dp))
-            Text(
-                text = "用另一张课表当天的安排替换所选日期，不修改任何课程。",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+            GlassOverlayHeader(title = "临时整天与调休补课", contentPadding = PaddingValues(0.dp))
             Text("选择日期", style = MaterialTheme.typography.labelLarge)
             Row(
                 modifier = Modifier.horizontalScroll(rememberScrollState()),
@@ -887,43 +915,75 @@ private fun TemporaryDaySheet(
             ) {
                 (0..6).forEach { offset ->
                     val date = data.weekStart.plusDays(offset.toLong())
+                    val holidayTag = data.holidays[date]?.let { if (it.isOffDay) " 假" else " 调" }.orEmpty()
                     LiquidFilterChip(
                         selected = date == selectedDate,
                         onClick = { selectedDate = date },
                         label = {
                             Text(
                                 "${DayLabels.shortLabel(date.dayOfWeek.value)} " +
-                                    "${date.monthValue}/${date.dayOfMonth}",
+                                    "${date.monthValue}/${date.dayOfMonth}$holidayTag",
                             )
                         },
                     )
                 }
             }
-            Text("来源课表", style = MaterialTheme.typography.labelLarge)
-            Text("所选日期课表：${owner?.name ?: "暂无课表"}", style = MaterialTheme.typography.bodySmall)
-            if (availableSources.isEmpty()) {
-                Text(
-                    text = "暂无其他课表；先在「我的课表」中新建或复制一份。",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+            Text("替换方式", style = MaterialTheme.typography.labelLarge)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                LiquidFilterChip(
+                    selected = makeupMode,
+                    onClick = { makeupMode = true },
+                    label = { Text("调休按星期补课") },
                 )
-            } else {
+                LiquidFilterChip(
+                    selected = !makeupMode,
+                    onClick = { makeupMode = false },
+                    label = { Text("其他课表整天替换") },
+                )
+            }
+            if (makeupMode) {
+                Text("选择补课星期", style = MaterialTheme.typography.labelLarge)
                 Row(
                     modifier = Modifier.horizontalScroll(rememberScrollState()),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    availableSources.forEach { table ->
+                    (1..7).forEach { day ->
                         LiquidFilterChip(
-                            selected = table.id == sourceId,
-                            onClick = { sourceId = table.id },
-                            label = { Text(table.name) },
+                            selected = day == makeupWeekday,
+                            onClick = { makeupWeekday = day },
+                            label = { Text(DayLabels.shortLabel(day)) },
                         )
+                    }
+                }
+            } else {
+                Text("来源课表", style = MaterialTheme.typography.labelLarge)
+                Text("所选日期课表：${owner?.name ?: "暂无课表"}", style = MaterialTheme.typography.bodySmall)
+                if (availableSources.isEmpty()) {
+                    Text(
+                        text = "暂无其他课表；先在「我的课表」中新建或复制一份。",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                } else {
+                    Row(
+                        modifier = Modifier.horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        availableSources.forEach { table ->
+                            LiquidFilterChip(
+                                selected = table.id == sourceId,
+                                onClick = { sourceId = table.id },
+                                label = { Text(table.name) },
+                            )
+                        }
                     }
                 }
             }
             if (existing) {
+                val label = existingRecord?.title?.let(com.gfs.iyango.core.domain.HolidayMakeupCodec::displayTitle)
+                    ?.takeIf { it.isNotBlank() } ?: "临时整天课表"
                 Text(
-                    text = "该日已使用临时整天课表。",
+                    text = "当前生效：$label",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.primary,
                 )
@@ -937,8 +997,14 @@ private fun TemporaryDaySheet(
                 }
                 TextButton(onClick = onDismiss) { Text("取消") }
                 LiquidButton(
-                    onClick = { onApply(selectedDate, sourceId) },
-                    enabled = owner != null && sourceId > 0 && availableSources.any { it.id == sourceId },
+                    onClick = {
+                        if (makeupMode) {
+                            onApplyMakeupWeekday(selectedDate, makeupWeekday)
+                        } else {
+                            onApply(selectedDate, sourceId)
+                        }
+                    },
+                    enabled = owner != null && (makeupMode || (sourceId > 0 && availableSources.any { it.id == sourceId })),
                     modifier = Modifier.padding(start = 8.dp),
                 ) { Text("应用") }
             }

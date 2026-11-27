@@ -27,6 +27,7 @@ import com.kyant.backdrop.backdrops.LayerBackdrop
 import com.kyant.backdrop.drawBackdrop
 import com.kyant.backdrop.effects.blur
 import com.kyant.backdrop.effects.lens
+import com.kyant.backdrop.effects.vibrancy
 import com.kyant.backdrop.highlight.Highlight
 import com.kyant.backdrop.highlight.HighlightStyle
 import com.kyant.backdrop.shadow.Shadow
@@ -52,6 +53,46 @@ fun glassContentFillColor(): Color {
         if (tint.alpha <= 0.004f) Color.Transparent else tint.compositeOver(MaterialTheme.colorScheme.background)
     } else {
         tint
+    }
+}
+
+/**
+ * 统一光学效果管线（对齐 Kyant0 标准 Apple 液态玻璃：vibrancy → blur → 短边限幅 lens）。
+ *
+ * 仅当存在模糊或折射时才挂载 `vibrancy()`，保证全透明/零玻璃预设保持纯直通透明；
+ * 当控件较矮时等比缩放折射带宽，避免上下折射带互相穿透。
+ */
+internal fun BackdropEffectScope.applyGlassEffects(
+    blurDp: Float,
+    lensWidthDp: Float,
+    lensHeightDp: Float,
+    canRefract: Boolean,
+    depthEffect: Boolean = false,
+    chromaticAberration: Boolean = false,
+) {
+    val hasBlur = blurDp > 0.01f
+    val hasLens = canRefract && lensWidthDp > 0.01f && lensHeightDp > 0.01f
+    if (!hasBlur && !hasLens) return
+
+    vibrancy()
+    if (hasBlur) {
+        blur(blurDp.dp.toPx())
+    }
+    if (hasLens) {
+        val rawHeight = lensWidthDp.dp.toPx()
+        val rawAmount = lensHeightDp.dp.toPx()
+        val maxLensHeight = (size.minDimension * 0.45f).coerceAtLeast(0f)
+        val scale = if (rawHeight > maxLensHeight && rawHeight > 0f) {
+            maxLensHeight / rawHeight
+        } else {
+            1f
+        }
+        lens(
+            refractionHeight = rawHeight * scale,
+            refractionAmount = rawAmount * scale,
+            depthEffect = depthEffect,
+            chromaticAberration = chromaticAberration,
+        )
     }
 }
 
@@ -178,17 +219,14 @@ fun GlassSurface(
         canRefract,
     ) {
         val block: BackdropEffectScope.() -> Unit = {
-            if (spec.blurDp > 0.01f) {
-                blur(spec.blurDp.dp.toPx())
-            }
-            if (canRefract && spec.lensWidthDp > 0.01f && spec.lensHeightDp > 0.01f) {
-                lens(
-                    refractionHeight = spec.lensWidthDp.dp.toPx(),
-                    refractionAmount = spec.lensHeightDp.dp.toPx(),
-                    depthEffect = spec.depthEffect,
-                    chromaticAberration = spec.chromaticAberration,
-                )
-            }
+            applyGlassEffects(
+                blurDp = spec.blurDp,
+                lensWidthDp = spec.lensWidthDp,
+                lensHeightDp = spec.lensHeightDp,
+                canRefract = canRefract,
+                depthEffect = spec.depthEffect,
+                chromaticAberration = spec.chromaticAberration,
+            )
         }
         block
     }
