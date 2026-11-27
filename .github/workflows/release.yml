@@ -72,8 +72,10 @@ jobs:
           GITHUB_REF_NAME: ${{ github.ref_name }}
         run: |
           python3 - <<'PY'
+          import datetime
           import glob
           import hashlib
+          import json
           import os
           import re
           import subprocess
@@ -199,6 +201,31 @@ jobs:
 
           with open("release-notes.md", "w", encoding="utf-8", newline="\n") as f:
               f.write("\n".join(out).rstrip() + "\n")
+
+          primary_apk = apks[0]
+          primary_name = os.path.basename(primary_apk)
+          version_code = 0
+          gradle_path = "app/build.gradle.kts"
+          if os.path.isfile(gradle_path):
+              with open(gradle_path, "r", encoding="utf-8") as gf:
+                  m_vc = re.search(r"\bversionCode\s*=\s*(\d+)", gf.read())
+                  if m_vc:
+                      version_code = int(m_vc.group(1))
+          manifest_obj = {
+              "versionCode": version_code,
+              "versionName": tag.lstrip("vV"),
+              "releaseNotes": "\n".join(changelog_lines).strip(),
+              "downloadUrl": f"https://github.com/{repo}/releases/download/{tag}/{primary_name}",
+              "pageUrl": f"https://github.com/{repo}/releases/tag/{tag}",
+              "publishedAt": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+              "apkSizeBytes": os.path.getsize(primary_apk),
+              "apkFileName": primary_name,
+              "forceUpdate": False,
+          }
+          manifest_path = "app/build/outputs/apk/release/update-manifest.json"
+          with open(manifest_path, "w", encoding="utf-8", newline="\n") as mf:
+              json.dump(manifest_obj, mf, ensure_ascii=False, indent=2)
+              mf.write("\n")
           PY
 
       - name: Attach APK to GitHub Release
@@ -209,4 +236,5 @@ jobs:
           files: |
             app/build/outputs/apk/release/*.apk
             app/build/outputs/apk/release/SHA256SUMS.txt
+            app/build/outputs/apk/release/update-manifest.json
           generate_release_notes: false

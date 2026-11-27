@@ -20,6 +20,8 @@
 - **随镜像同步**：版本号变更后按第 3 节规则一并同步至 `G:\code\Android\test\iYango`。
 
 ## 5. GitHub 发布触发准则 (Tag-Only Release Trigger)
-- **仅 `v*` 标签触发 GitHub 更新**：推送常规提交到 `main` 等分支时，不触发 GitHub Actions 编译与发布；只有明确发布正式版本并推送 `v*` 格式标签（如 `git tag -a v1.1 -m "Release v1.1" && git push origin v1.1`）时，才触发 GitHub Actions 编译 Release APK 并发布 GitHub Release。
+- **仅 `v*` 标签触发 GitHub 更新**：推送常规提交到 `main` 等分支时，不触发 GitHub Actions 编译与发布；只有推送 `v*` 格式附注标签时，才触发 GitHub Actions 编译 Release APK 并发布 GitHub Release。
 - **工作流触发约束**：`G:\code\Android\test\iYango\.github\workflows\release.yml` 仅监听 `push.tags: ["v*"]`（及手动 `workflow_dispatch`），禁止添加 `push.branches`。
-- **同步推送默认不打标签**：向发布镜像库执行 `git push` 时默认仅推送分支提交，除非用户显式要求发布版本或推送 `v*` 标签。
+- **推送默认联动打标（仅 `.md` 例外）**：用户要求向发布镜像库执行推送时，先检查本次待推送变更文件清单：
+  - 若**仅包含 `.md` 文件**（如 `README.md`、`AGENTS.md` 等纯文档更新），仅推送 `main` 分支，不创建也不推送 `v*` 标签。
+  - 若**包含任何非 `.md` 文件**（源码、资源、构建配置等），推送 `main` 后默认按 `app/build.gradle.kts` 中的 `versionName` 创建并推送 `v<versionName>` 附注标签（使用 `git tag -a v<versionName> --cleanup=verbatim -F <utf8-notes-file>` 保留结构化 Markdown 标题，供 `release.yml` 自动生成更新日志）；若检测到 `v<versionName>` 标签已在本地或远端存在（例如按第 4 节未自动递增版本号的纯修复改动），先向用户确认目标版本号后再打标推送。

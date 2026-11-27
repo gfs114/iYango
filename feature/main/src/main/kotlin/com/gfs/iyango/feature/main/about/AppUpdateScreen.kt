@@ -79,6 +79,7 @@ fun AppUpdateScreen(
     val autoCheckEnabled by viewModel.autoCheckEnabled.collectAsStateWithLifecycle()
     val releaseHistory by viewModel.releaseHistory.collectAsStateWithLifecycle()
     val historyLoading by viewModel.historyLoading.collectAsStateWithLifecycle()
+    val manualUpdateDialogRelease by viewModel.manualUpdateDialogRelease.collectAsStateWithLifecycle()
 
     var installNotice by remember { mutableStateOf<String?>(null) }
 
@@ -284,6 +285,23 @@ fun AppUpdateScreen(
                 }
             }
         }
+    }
+
+    manualUpdateDialogRelease?.let { release ->
+        AppUpdateDialog(
+            release = release,
+            onDismiss = viewModel::dismissManualUpdateDialog,
+            onIgnore = viewModel::ignoreVersion,
+            onOpenUpdatePage = {
+                if (release.forceUpdate) {
+                    viewModel.clearManualUpdateDialogOnly()
+                } else {
+                    viewModel.dismissManualUpdateDialog()
+                }
+                installNotice = null
+                viewModel.startDownload(release)
+            },
+        )
     }
 }
 

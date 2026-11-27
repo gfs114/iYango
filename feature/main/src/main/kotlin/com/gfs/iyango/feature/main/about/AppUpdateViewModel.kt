@@ -9,7 +9,9 @@ import com.gfs.iyango.core.domain.AppUpdateRelease
 import com.gfs.iyango.core.domain.UpdateDownloadMirror
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
 /**
@@ -28,6 +30,9 @@ class AppUpdateViewModel @Inject constructor(
     val releaseHistory: StateFlow<List<AppUpdateRelease>> = appUpdate.releaseHistory
     val historyLoading: StateFlow<Boolean> = appUpdate.historyLoading
 
+    private val _manualUpdateDialogRelease = MutableStateFlow<AppUpdateRelease?>(null)
+    val manualUpdateDialogRelease: StateFlow<AppUpdateRelease?> = _manualUpdateDialogRelease.asStateFlow()
+
     val currentVersionName: String get() = appUpdate.currentVersionName
     val currentVersionCode: Long get() = appUpdate.currentVersionCode
 
@@ -42,9 +47,21 @@ class AppUpdateViewModel @Inject constructor(
 
     fun checkForUpdates() {
         viewModelScope.launch {
-            appUpdate.checkManually()
+            val result = appUpdate.checkManually()
+            if (result is AppUpdateCheckState.Available) {
+                _manualUpdateDialogRelease.value = result.release
+            }
             appUpdate.loadReleaseHistory(force = true)
         }
+    }
+
+    fun dismissManualUpdateDialog() {
+        _manualUpdateDialogRelease.value = null
+        appUpdate.dismissPrompt()
+    }
+
+    fun clearManualUpdateDialogOnly() {
+        _manualUpdateDialogRelease.value = null
     }
 
     fun startDownload(release: AppUpdateRelease) {
@@ -76,6 +93,7 @@ class AppUpdateViewModel @Inject constructor(
     }
 
     fun ignoreVersion(versionKey: String) {
+        _manualUpdateDialogRelease.value = null
         viewModelScope.launch {
             appUpdate.ignoreVersion(versionKey)
         }

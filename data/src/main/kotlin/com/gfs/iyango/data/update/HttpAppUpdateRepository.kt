@@ -17,10 +17,14 @@ import java.io.File
 import java.io.FileOutputStream
 import java.io.IOException
 import java.io.RandomAccessFile
+import java.net.ConnectException
+import java.net.SocketTimeoutException
+import java.net.UnknownHostException
 import java.time.Clock
 import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 import javax.inject.Singleton
+import javax.net.ssl.SSLException
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 import kotlinx.coroutines.CancellationException
@@ -143,21 +147,48 @@ class HttpAppUpdateRepository internal constructor(
         withContext(Dispatchers.IO) {
             historyMutex.withLock {
                 if (!force && _releaseHistory.value.isNotEmpty()) return@withLock
-                val listUrl = AppUpdateManifestParser.deriveReleasesListUrl(effectiveEndpoint())
-                    ?: return@withLock
-                if (!AppUpdateManifestParser.isSafeExternalUrl(listUrl)) return@withLock
+                val endpoint = effectiveEndpoint()
+                val candidates = AppUpdateManifestParser.buildReleaseHistoryCandidates(
+                    endpoint = endpoint,
+                    mirror = _downloadMirror.value,
+                ).filter { AppUpdateManifestParser.isSafeExternalUrl(it.url) }
+                if (candidates.isEmpty()) return@withLock
+
                 val startedAt = clock.millis()
                 _historyLoading.value = true
                 try {
                     val ua = "iYango/$currentVersionName (Android)"
-                    val body = httpGet(listUrl, ua)
-                    val releases = AppUpdateManifestParser.parseReleaseList(body)
-                    _releaseHistory.value = releases
-                } catch (cancelled: CancellationException) {
-                    throw cancelled
-                } catch (error: Exception) {
-                    val msg = error.message?.trim()?.takeIf { it.isNotEmpty() } ?: "获取历史版本失败"
-                    recordDiagnostic("FAILED", error.javaClass.simpleName, startedAt, msg)
+                    var loaded: List<AppUpdateRelease>? = null
+                    var firstError: Exception? = null
+                    for (candidate in candidates) {
+                        try {
+                            val body = httpGet(candidate.url, ua)
+                            val parsedList = when (candidate.format) {
+                                UpdateCandidateFormat.JSON ->
+                                    AppUpdateManifestParser.parseReleaseList(body)
+                                UpdateCandidateFormat.ATOM ->
+                                    AppUpdateManifestParser.parseReleaseAtomFeed(
+                                        body,
+                                        requireApkAsset = false,
+                                    )
+                            }
+                            if (parsedList.isNotEmpty()) {
+                                loaded = parsedList
+                                break
+                            }
+                        } catch (cancelled: CancellationException) {
+                            throw cancelled
+                        } catch (error: Exception) {
+                            if (firstError == null) firstError = error
+                        }
+                    }
+                    if (loaded != null) {
+                        _releaseHistory.value = loaded
+                    } else if (firstError != null) {
+                        val msg = firstError.message?.trim()?.takeIf { it.isNotEmpty() }
+                            ?: firstError.javaClass.simpleName
+                        recordDiagnostic("FAILED", firstError.javaClass.simpleName, startedAt, msg)
+                    }
                 } finally {
                     _historyLoading.value = false
                 }
@@ -314,12 +345,12 @@ class HttpAppUpdateRepository internal constructor(
                 throw cancelled
             } catch (error: Exception) {
                 partFile.delete()
-                val msg = error.message?.trim()?.takeIf { it.isNotEmpty() } ?: "下载失败"
-                recordDiagnostic("FAILED", error.javaClass.simpleName, startedAt, msg)
+                val rawMsg = error.message?.trim()?.takeIf { it.isNotEmpty() } ?: error.javaClass.simpleName
+                recordDiagnostic("FAILED", error.javaClass.simpleName, startedAt, rawMsg)
                 if (activeDownloadToken == token) {
                     _downloadState.value = AppUpdateDownloadState.Failed(
                         versionKey = versionKey,
-                        message = msg,
+                        message = formatUserFacingNetworkError(error, isDownload = true),
                     )
                 }
             }
@@ -372,49 +403,79 @@ class HttpAppUpdateRepository internal constructor(
                 val currentCode = currentVersionCodeProvider()
                 val currentName = currentVersionNameProvider()
                 val ua = "iYango/${currentName.ifBlank { FALLBACK_VERSION_NAME }} (Android)"
-                try {
-                    val body = httpGet(endpoint, ua)
-                    val parsed = AppUpdateManifestParser.parse(body)
-                        ?: run {
-                            val msg = "更新信息格式无效"
-                            recordDiagnostic("FAILED", "InvalidManifest", now, msg)
-                            return@withLock AppUpdateCheckState.Failed(msg).also { _state.value = it }
+                val repoRef = AppUpdateManifestParser.extractGitHubRepo(endpoint)
+                val candidates = AppUpdateManifestParser.buildLatestCheckCandidates(
+                    endpoint = endpoint,
+                    mirror = _downloadMirror.value,
+                )
+                var parsed: ParsedUpdateManifest? = null
+                var firstError: Exception? = null
+                var lastError: Exception? = null
+                var invalidPayloadSeen = false
+                for (candidate in candidates) {
+                    if (!AppUpdateManifestParser.isSafeExternalUrl(candidate.url)) continue
+                    try {
+                        val body = httpGet(candidate.url, ua)
+                        val attempt = when (candidate.format) {
+                            UpdateCandidateFormat.JSON ->
+                                AppUpdateManifestParser.parse(body, fallbackRepo = repoRef)
+                            UpdateCandidateFormat.ATOM ->
+                                AppUpdateManifestParser.parseLatestFromAtom(body)
                         }
-                    val newer = AppVersionComparator.isNewer(
-                        remoteVersionCode = parsed.release.versionCode,
-                        remoteVersionName = parsed.release.versionName,
-                        currentVersionCode = currentCode,
-                        currentVersionName = currentName,
-                    )
-                    if (!newer) {
-                        return@withLock AppUpdateCheckState.UpToDate(currentName, clock.millis())
-                            .also { _state.value = it }
+                        if (attempt != null) {
+                            parsed = attempt
+                            break
+                        }
+                        invalidPayloadSeen = true
+                    } catch (cancelled: CancellationException) {
+                        throw cancelled
+                    } catch (error: Exception) {
+                        if (firstError == null) firstError = error
+                        lastError = error
                     }
-                    val force = AppVersionComparator.isForceRequired(
-                        forceUpdate = parsed.release.forceUpdate,
-                        minSupportedVersionCode = parsed.minSupportedVersionCode,
-                        currentVersionCode = currentCode,
-                    )
-                    val resolvedRelease = parsed.release.copy(forceUpdate = force)
-                    val available = AppUpdateCheckState.Available(resolvedRelease, clock.millis())
-                    _state.value = available
-
-                    val ignoredKey = prefsProvider().getString(KEY_IGNORED_VERSION, null).orEmpty()
-                    val shouldPrompt = manual ||
-                        force ||
-                        (resolvedRelease.versionKey != ignoredKey &&
-                            resolvedRelease.versionKey != dismissedSessionVersionKey)
-                    if (shouldPrompt) {
-                        _promptRelease.value = resolvedRelease
-                    }
-                    available
-                } catch (cancelled: CancellationException) {
-                    throw cancelled
-                } catch (error: Exception) {
-                    val msg = error.message?.trim()?.takeIf { it.isNotEmpty() } ?: "检查更新失败"
-                    recordDiagnostic("FAILED", error.javaClass.simpleName, now, msg)
-                    AppUpdateCheckState.Failed(msg).also { _state.value = it }
                 }
+                if (parsed == null) {
+                    if (firstError == null && invalidPayloadSeen) {
+                        val msg = "更新信息格式无效"
+                        recordDiagnostic("FAILED", "InvalidManifest", now, msg)
+                        return@withLock AppUpdateCheckState.Failed(msg).also { _state.value = it }
+                    }
+                    val representative = firstError ?: lastError ?: IOException("检查更新失败")
+                    val rawMsg = representative.message?.trim()?.takeIf { it.isNotEmpty() }
+                        ?: representative.javaClass.simpleName
+                    recordDiagnostic("FAILED", representative.javaClass.simpleName, now, rawMsg)
+                    val userMsg = formatUserFacingNetworkError(representative, isDownload = false)
+                    return@withLock AppUpdateCheckState.Failed(userMsg).also { _state.value = it }
+                }
+
+                val newer = AppVersionComparator.isNewer(
+                    remoteVersionCode = parsed.release.versionCode,
+                    remoteVersionName = parsed.release.versionName,
+                    currentVersionCode = currentCode,
+                    currentVersionName = currentName,
+                )
+                if (!newer) {
+                    return@withLock AppUpdateCheckState.UpToDate(currentName, clock.millis())
+                        .also { _state.value = it }
+                }
+                val force = AppVersionComparator.isForceRequired(
+                    forceUpdate = parsed.release.forceUpdate,
+                    minSupportedVersionCode = parsed.minSupportedVersionCode,
+                    currentVersionCode = currentCode,
+                )
+                val resolvedRelease = parsed.release.copy(forceUpdate = force)
+                val available = AppUpdateCheckState.Available(resolvedRelease, clock.millis())
+                _state.value = available
+
+                val ignoredKey = prefsProvider().getString(KEY_IGNORED_VERSION, null).orEmpty()
+                val shouldPrompt = manual ||
+                    force ||
+                    (resolvedRelease.versionKey != ignoredKey &&
+                        resolvedRelease.versionKey != dismissedSessionVersionKey)
+                if (shouldPrompt) {
+                    _promptRelease.value = resolvedRelease
+                }
+                available
             }
         }
 
@@ -449,7 +510,7 @@ class HttpAppUpdateRepository internal constructor(
         const val KEY_CUSTOM_ENDPOINT = "custom_endpoint_override"
         const val KEY_DOWNLOAD_MIRROR = "download_mirror"
         const val KEY_AUTO_CHECK_ENABLED = "auto_check_enabled"
-        const val FALLBACK_VERSION_NAME = "1.2"
+        const val FALLBACK_VERSION_NAME = "1.3"
         const val LAUNCH_GUARD_MILLIS = 10_000L
         const val MAX_BODY_BYTES = 512 * 1024
         const val PROGRESS_THROTTLE_NANOS = 120_000_000L
@@ -457,8 +518,10 @@ class HttpAppUpdateRepository internal constructor(
 
         private val httpClient: OkHttpClient by lazy {
             OkHttpClient.Builder()
-                .connectTimeout(10, TimeUnit.SECONDS)
-                .readTimeout(10, TimeUnit.SECONDS)
+                .connectTimeout(8, TimeUnit.SECONDS)
+                .readTimeout(8, TimeUnit.SECONDS)
+                .followRedirects(true)
+                .followSslRedirects(true)
                 .build()
         }
 
@@ -514,9 +577,14 @@ class HttpAppUpdateRepository internal constructor(
         }
 
         private suspend fun defaultHttpGet(url: String, userAgent: String): String {
+            val acceptHeader = if (url.substringBefore('?').endsWith(".atom", ignoreCase = true)) {
+                "application/atom+xml, application/xml;q=0.9, */*;q=0.8"
+            } else {
+                "application/json"
+            }
             val request = Request.Builder()
                 .url(url)
-                .header("Accept", "application/json")
+                .header("Accept", acceptHeader)
                 .header("User-Agent", userAgent)
                 .get()
                 .build()
@@ -635,5 +703,69 @@ class HttpAppUpdateRepository internal constructor(
                 })
             }
         }
+    }
+}
+
+private val HTTP_5XX_REGEX = Regex("^HTTP 5\\d\\d\\b")
+private val CJK_CHAR_REGEX = Regex("[\\u4e00-\\u9fff]")
+
+internal fun formatUserFacingNetworkError(
+    error: Throwable,
+    isDownload: Boolean,
+): String {
+    val causes = generateSequence(error) { it.cause }.take(6).toList()
+    if (causes.any { it is UnknownHostException }) {
+        return if (isDownload) {
+            "无法解析下载服务器域名，请检查网络、切换下载源或确认应用联网权限"
+        } else {
+            "无法解析更新服务器域名，请检查网络连接、DNS 或应用联网权限"
+        }
+    }
+    if (causes.any { it is SocketTimeoutException }) {
+        return if (isDownload) {
+            "下载超时，请切换下载源或稍后重试"
+        } else {
+            "连接更新服务器超时，请稍后重试或切换网络"
+        }
+    }
+    if (causes.any { it is ConnectException }) {
+        return if (isDownload) {
+            "无法连接下载服务器，请切换下载源重试"
+        } else {
+            "无法连接更新服务器，请检查网络或代理设置"
+        }
+    }
+    if (causes.any { it is SSLException }) {
+        return "安全连接失败，请检查系统时间或网络代理设置"
+    }
+    val raw = error.message?.trim().orEmpty()
+    if (raw.startsWith("HTTP 403") || raw.startsWith("HTTP 429")) {
+        return if (isDownload) {
+            "当前下载源访问受限，请切换下载源重试"
+        } else {
+            "更新服务请求受限，请稍后重试或切换下载源"
+        }
+    }
+    if (raw.startsWith("HTTP 404")) {
+        return if (isDownload) {
+            "安装包暂不可用，请切换下载源或稍后重试"
+        } else {
+            "暂未找到已发布版本信息"
+        }
+    }
+    if (HTTP_5XX_REGEX.containsMatchIn(raw)) {
+        return if (isDownload) {
+            "下载服务器暂时不可用，请切换下载源重试"
+        } else {
+            "更新服务器暂时不可用，请稍后重试"
+        }
+    }
+    if (CJK_CHAR_REGEX.containsMatchIn(raw)) {
+        return raw
+    }
+    return if (isDownload) {
+        "网络异常，下载失败，请重试或切换下载源"
+    } else {
+        "网络异常，检查更新失败，请检查网络后重试"
     }
 }

@@ -97,6 +97,7 @@ fun AboutScreen(
     val error by viewModel.error.collectAsStateWithLifecycle()
     val doneMessage by viewModel.doneMessage.collectAsStateWithLifecycle()
     val updateState by viewModel.updateState.collectAsStateWithLifecycle()
+    val updateDialogRelease by viewModel.updateDialogRelease.collectAsStateWithLifecycle()
     val customUpdateUrl by viewModel.customUpdateUrl.collectAsStateWithLifecycle()
 
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -203,8 +204,9 @@ fun AboutScreen(
                     val checkingUpdate = updateState is AppUpdateCheckState.Checking
                     LiquidOutlinedButton(
                         onClick = {
-                            if (updateState is AppUpdateCheckState.Available) {
-                                onOpenAppUpdate()
+                            val current = updateState
+                            if (current is AppUpdateCheckState.Available) {
+                                viewModel.showUpdateDialog(current.release)
                             } else {
                                 viewModel.checkForUpdates()
                             }
@@ -393,6 +395,22 @@ fun AboutScreen(
             },
             dismissButton = {
                 TextButton(onClick = viewModel::dismissClear) { Text("取消") }
+            },
+        )
+    }
+
+    updateDialogRelease?.let { release ->
+        AppUpdateDialog(
+            release = release,
+            onDismiss = viewModel::dismissUpdateDialog,
+            onIgnore = viewModel::ignoreUpdateVersion,
+            onOpenUpdatePage = {
+                if (release.forceUpdate) {
+                    viewModel.clearUpdateDialogOnly()
+                } else {
+                    viewModel.dismissUpdateDialog()
+                }
+                onOpenAppUpdate()
             },
         )
     }

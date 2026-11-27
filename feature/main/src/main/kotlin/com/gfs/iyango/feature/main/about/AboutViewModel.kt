@@ -9,6 +9,7 @@ import com.gfs.iyango.core.domain.CalendarCoordinatorPort
 import com.gfs.iyango.core.domain.AppSettingsPort
 import com.gfs.iyango.core.domain.AppUpdateCheckState
 import com.gfs.iyango.core.domain.AppUpdatePort
+import com.gfs.iyango.core.domain.AppUpdateRelease
 import com.gfs.iyango.core.domain.CalendarSyncStatus
 import com.gfs.iyango.core.domain.DiagnosticExport
 import com.gfs.iyango.core.domain.DiagnosticLogPort
@@ -78,6 +79,7 @@ class AboutViewModel @Inject constructor(
     val doneMessage = MutableStateFlow<String?>(null)
 
     val updateState: StateFlow<AppUpdateCheckState> = appUpdate.state
+    val updateDialogRelease = MutableStateFlow<AppUpdateRelease?>(null)
     val customUpdateUrl = MutableStateFlow("")
 
     init {
@@ -190,7 +192,30 @@ class AboutViewModel @Inject constructor(
     fun checkForUpdates() {
         viewModelScope.launch {
             error.value = null
-            appUpdate.checkManually()
+            val result = appUpdate.checkManually()
+            if (result is AppUpdateCheckState.Available) {
+                updateDialogRelease.value = result.release
+            }
+        }
+    }
+
+    fun showUpdateDialog(release: AppUpdateRelease) {
+        updateDialogRelease.value = release
+    }
+
+    fun dismissUpdateDialog() {
+        updateDialogRelease.value = null
+        appUpdate.dismissPrompt()
+    }
+
+    fun clearUpdateDialogOnly() {
+        updateDialogRelease.value = null
+    }
+
+    fun ignoreUpdateVersion(versionKey: String) {
+        updateDialogRelease.value = null
+        viewModelScope.launch {
+            appUpdate.ignoreVersion(versionKey)
         }
     }
 

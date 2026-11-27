@@ -92,6 +92,12 @@ fun AppUpdateDialog(
                             }
                         }
                     }
+                } else {
+                    Text(
+                        text = "暂无更新说明",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                 }
                 if (actionUrl.isBlank() && onOpenUpdatePage == null) {
                     Text(
